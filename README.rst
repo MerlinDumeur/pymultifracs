@@ -28,7 +28,7 @@ You first need to get the environment file for the package
 
 .. code:: shell
 
-    wget https://raw.githubusercontent.com/MerlinDumeur/mfanalysis/master/examples/env.yml
+    wget https://raw.githubusercontent.com/MerlinDumeur/mfanalysis/v0.20/examples/env.yml
 
 Creating a new environment (recommended)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -50,7 +50,7 @@ Using pip
 
 .. code:: shell
     
-    pip install git+https://github.com/MerlinDumeur/mfanalysis.git@master
+    pip install git+https://github.com/MerlinDumeur/mfanalysis.git@v0.20
 
 
 Cloning the whole repository (including examples)
@@ -58,7 +58,7 @@ Cloning the whole repository (including examples)
 
 .. code:: shell
 
-    git clone https://github.com/MerlinDumeur/mfanalysis.git@master
+    git clone https://github.com/MerlinDumeur/mfanalysis.git@v0.20
 
 To install the package from the local repo, use the following command.
 
