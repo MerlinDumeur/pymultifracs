@@ -24,7 +24,6 @@ doc/_autosummary/
 .vscode
 *.code-workspace
 
-*.png
 *.svg
 
 examples/src/
@@ -33,3 +32,5 @@ examples/*.txt*
 pymultifracs/todo.txt
 
 # example_data/
+examples/
+notebooks/
