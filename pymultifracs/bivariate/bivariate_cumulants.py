@@ -266,19 +266,24 @@ class BiCumulants(MultiResolutionQuantityBase):
                                facecolors=colors, shade=False, linestyle='-',
                                edgecolors='black', zorder=1)
         ax.set_zlim(0, 1)
+        ax.set_xlabel('h1')
+        ax.set_ylabel('h2')
+        ax.set_zlabel('L(h1, h2)')
         ax.view_init(elev=45)
 
         # TODO manage to plot the contours or switch to 3D plotting libs
         fig.colorbar(surf, shrink=0.6, aspect=10)
 
     def plot_legendre_pv(self, resolution=30, figsize=(10, 10), cmap=None,
-                         use_ipyvtk=False):
+                         use_ipyvtk=False, cpos=None, location='closest',
+                         filename=None):
 
         import pyvista as pv
+        # if use_ipyvtk:
+        from ..viz import start_xvfb
+        start_xvfb()
 
-        if use_ipyvtk:
-            from ..viz import start_xvfb
-            start_xvfb()
+        # cpos = cpos or
 
         h, L = self.compute_legendre(resolution=200)
 
@@ -304,8 +309,15 @@ class BiCumulants(MultiResolutionQuantityBase):
         bounds = [h_x.min(), h_x.max(), h_y.min(), h_y.max(), 0, 1]
         clipped = grid.clip_box(bounds, invert=False)
 
-        p = pv.Plotter()
+        p = pv.Plotter(window_size=[1200, 1080])
         p.add_mesh(clipped, scalars=clipped.points[:, 2])
+        # p.camera_position = [(0, 0, 0), (1, 1, 1), (0, 0, 1.0)]
         p.show_grid(xlabel='h1', ylabel='h2', zlabel='L(h1, h2)',
-                    bounds=bounds)
-        p.show(use_ipyvtk=use_ipyvtk)
+                    bounds=bounds, font_size=20, use_2d=True,
+                    location=location)
+        if cpos is not None:
+            p.camera_position = cpos
+        if filename is not None:
+            p.save_graphic(filename)
+        cpos = p.show(use_ipyvtk=use_ipyvtk)
+        print(cpos)

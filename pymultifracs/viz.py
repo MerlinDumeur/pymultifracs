@@ -14,8 +14,10 @@ def plot_multiscale(results, seg2color, ax=None):
     ax = plt.gca() if ax is None else ax
 
     segs = {*results.index.get_level_values(1).unique()}
-    subjects = results.index.get_level_values(0).unique()
-    n = len(subjects)
+    # subjects = results.index.get_level_values(0).unique()
+    subjects = {seg: results.loc[pd.IndexSlice[:, seg], :].index.get_level_values(0)
+                for seg in segs}
+    # n = len(subjects)
 
     maxf = {
         seg: results.loc[pd.IndexSlice[:, seg], 'freq'].apply(max).min()
@@ -27,12 +29,14 @@ def plot_multiscale(results, seg2color, ax=None):
         for seg in segs
     }
 
+    # import ipdb; ipdb.set_trace()
+
     trimmed = {
         seg: pd.Series([row[1].mscale[(row[1].freq <= maxf[seg])
                                       & (row[1].freq >= minf[seg])]
                         for row in results.loc[pd.IndexSlice[:, seg],
                                                ['freq', 'mscale']].iterrows()],
-                       index=subjects)
+                       index=subjects[seg])
         for seg in segs
     }
 
@@ -47,8 +51,8 @@ def plot_multiscale(results, seg2color, ax=None):
     }
 
     freqs_avg = {
-        seg: (freq := results.loc[subjects[0], seg].freq)[(freq <= maxf[seg])
-                                                          & (freq >= minf[seg])]
+        seg: (freq := results.loc[subjects[seg][0], seg].freq)[(freq <= maxf[seg])
+                                                               & (freq >= minf[seg])]
         for seg in segs
     }
 
@@ -69,9 +73,10 @@ def plot_multiscale(results, seg2color, ax=None):
               for freq in results.loc[pd.IndexSlice[:, seg], 'freq']]
              + [*freqs_avg.values()])
 
-    color = ([seg2color[seg] for seg in segs for i in range(n)]
+    color = ([seg2color[seg]
+              for seg in segs for i in range(len(subjects[seg]))]
              + [seg2color[seg + '_avg'] for seg in segs])
-    lw = ([1] * (len(segs) * n)) + ([2] * len(segs))
+    lw = ([1] * sum([len(subjects[seg]) for seg in segs])) + ([2] * len(segs))
 
     log_plot(freqs, mscales, lowpass_freq=50, color=color, linewidth=lw, ax=ax)
 
