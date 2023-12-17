@@ -198,14 +198,13 @@ def plot_bicm(cm, ind_m1, ind_m2, j1, j2, scaling_range, ax, C_color='grey',
 def plot_cm(cm, ind_m, j1, j2, scaling_range, ax, C_color='grey',
             fit_color='k', plot_legend=False, lw_fit=2, plot_fit=True,
             C_fmt='--.', lw_C=None, offset=0, plot_CI=True, signal_idx=0,
-            **C_kwargs):
+            shift_gamint=True, **C_kwargs):
 
     if j1 is None:
         if cm.bootstrapped_mrq is not None:
             j1 = cm.bootstrapped_mrq.j.min()
         else:
             j1 = cm.j.min()
-
 
     if j2 is None:
         j2 = cm.j.max()
@@ -222,6 +221,9 @@ def plot_cm(cm, ind_m, j1, j2, scaling_range, ax, C_color='grey',
     x = cm.j[j_min:j_max]
 
     y = getattr(cm, f'C{m}')[j_min:j_max, signal_idx, 0]
+
+    if shift_gamint and ind_m == 0:
+        y -= x * cm.gamint / np.log2(np.e)
 
     if cm.bootstrapped_mrq is not None and plot_CI:
 
@@ -262,11 +264,17 @@ def plot_cm(cm, ind_m, j1, j2, scaling_range, ax, C_color='grey',
 
         x0, x1 = cm.scaling_ranges[scaling_range]
         slope_log2_e = cm.log_cumulants[ind_m, scaling_range, signal_idx]
-        slope = cm.slope[ind_m, scaling_range, signal_idx]
+
+        if shift_gamint and ind_m == 0:
+            slope_log2_e -= cm.gamint
+
+        slope = slope_log2_e / np.log2(np.e)
+
+        # slope = cm.slope[ind_m, scaling_range, signal_idx]
         intercept = cm.intercept[ind_m, scaling_range, signal_idx]
 
-        y0 = slope*x0 + intercept
-        y1 = slope*x1 + intercept
+        y0 = slope*x0 + intercept + offset
+        y1 = slope*x1 + intercept + offset
 
         if cm.bootstrapped_mrq is not None:
             CI = getattr(cm, f"CIE_c{m}")[scaling_range, signal_idx]
@@ -284,6 +292,8 @@ def plot_cm(cm, ind_m, j1, j2, scaling_range, ax, C_color='grey',
                 linestyle='-', linewidth=lw_fit, label=legend, zorder=0)
         if plot_legend:
             ax.legend()
+
+    ax.tick_params(bottom=False, top=False, which='minor')
 
 
 def plot_cumulants(cm, figsize, fignum=1, nrow=3, j1=None, filename=None,
@@ -411,8 +421,6 @@ def plot_coef(mrq, j1, j2, leader=True, ax=None, vmin=None, vmax=None,
         norm = PowerNorm(vmin=vmin, vmax=vmax, gamma=gamma)
     else:
         norm = PowerNorm(vmin=vmin, vmax=vmax, gamma=gamma)
-
-    # ax = axes[0]
 
     cmap = mpl.cm.get_cmap('inferno').copy()
     cmap.set_bad('grey')
