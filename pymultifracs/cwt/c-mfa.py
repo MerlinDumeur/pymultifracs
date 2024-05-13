@@ -7,6 +7,8 @@ from scipy.ndimage import maximum_filter
 from scipy.signal import fftconvolve, convolve, oaconvolve
 import fcwt
 
+import matplotlib.pyplot as plt
+
 from pymultifracs.simul import mrw
 
 
@@ -54,7 +56,7 @@ class ContinuousMRQ:
     
     def compute_leaders(self):
 
-        if self.formalism != 'wavelet coef':
+        if self.formalism != Formalism.WT_COEF:
             raise ValueError(
                 'This method should be invoked from a wavelet coef object, '
                 f'current object is {self.formalism}')
@@ -78,7 +80,7 @@ class ContinuousMRQ:
         if p_exp == np.inf:
             return self.compute_leaders()
         
-        if self.formalism != 'wavelet coef':
+        if self.formalism != Formalism.WT_COEF:
             raise ValueError(
                 'This method should be invoked from a wavelet coef object, '
                 f'current object is {self.formalism}')
@@ -131,6 +133,26 @@ class ContinuousMRQ:
         return ContinuousMRQ(wse, self.sigma, self.scales, self.sfreq,
                              Formalism.WSE)
 
+    def plot(self, ax=None, cbar=True, cmap='cet_fire', vmin=0, vmax=None):
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        t = np.linspace(0, self.values.shape[1] / self.sfreq, self.values.shape[1]+2)
+        t = .5 * (t[:-1] + t[1:])
+
+        coeff = self.scales[0] / self.scales[1]
+        cwt_freqs = self.sfreq / self.scales
+        f = np.r_[cwt_freqs[0] / coeff, cwt_freqs, cwt_freqs[-1] * coeff]
+        f = np.sqrt(f[1:] * f[:-1])
+
+        qm = ax.pcolormesh(t, f, abs(self.values[:]), rasterized=True, cmap=cmap,
+                           vmin=vmin, vmax=vmax)
+        ax.set(xlim=(t[0], t[-1]), ylim=(f[0], f[-1]),
+               ylabel='Frequency (Hz)', xlabel='Time (s)')
+
+        if cbar:
+            plt.colorbar(qm, ax=ax, fraction=.1, aspect=8)
 
 def width_from_scale(a, scale):
     return int(2 ** (np.log2(a) - np.log2(scale) + 1)
