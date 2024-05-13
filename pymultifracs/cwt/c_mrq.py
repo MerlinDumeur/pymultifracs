@@ -22,44 +22,46 @@ def cwt(signal, sigma, fs, f0, f1, fn):
 
     fcwt_obj = fcwt.FCWT(morl, 1, False, True)
     cwt = np.zeros((fn, signal.shape[0]), dtype=np.complex64)
-    fcwt_obj.cwt(signal, scales, cwt)
+    fcwt_obj.cwt(signal.astype('single'), scales, cwt)
 
     freqs = np.zeros((fn,), dtype=np.float32)
     scales.getFrequencies(freqs)
     scales = fs / freqs
 
-    return ContinuousMRQ(cwt.squeeze(), sigma, scales, fs, Formalism.WT_COEF)
+    return CWT(abs(cwt.squeeze()), sigma, scales, fs)
 
 
 def remove_edges_cwt(cwt):
     for i, s in enumerate(cwt.scales):
         support = int(np.ceil(3 * cwt.sigma * s))
-        cwt.data[i, :support] = np.nan
-        cwt.data[i, -support:] = np.nan
+        cwt.values[i, :support] = np.nan
+        cwt.values[i, -support:] = np.nan
 
 
 def remove_edges_leaders(leader, scales, sigma):
     for i, s in enumerate(scales):
-        support = int(np.ceil(3 * sigma * s))
+        support = int(np.ceil(3 * s * sigma + 2 * s))
         leader[i, :support] = np.nan
         leader[i, -support:] = np.nan
 
 
 @dataclass
-class ContinuousMRQ:
+class CWT:
     values: np.ndarray
     sigma: float
     scales: np.ndarray
     sfreq: float
-    formalism: Formalism
-    p_exp: Union[float, None] = None
+
+    def __post_init__(self):
+        # remove_edges_cwt(self)
+        pass
     
     def compute_leaders(self):
 
-        if self.formalism != Formalism.WT_COEF:
-            raise ValueError(
-                'This method should be invoked from a wavelet coef object, '
-                f'current object is {self.formalism}')
+        # if self.formalism != Formalism.WT_COEF:
+        #     raise ValueError(
+        #         'This method should be invoked from a wavelet coef object, '
+        #        f'current object is {self.formalism}')
 
         leader = np.abs(self.values).squeeze()
 
@@ -72,18 +74,18 @@ class ContinuousMRQ:
 
         remove_edges_leaders(leader, self.scales, self.sigma)
 
-        return ContinuousMRQ(leader, self.sigma, self.scales, self.sfreq,
-                             Formalism.WT_LEADER, np.inf)
+        return CWTLeader(
+            leader, self.sigma, self.scales, self.sfreq, p_exp=np.inf)
     
     def compute_pleaders(self, p_exp):
 
         if p_exp == np.inf:
             return self.compute_leaders()
         
-        if self.formalism != Formalism.WT_COEF:
-            raise ValueError(
-                'This method should be invoked from a wavelet coef object, '
-                f'current object is {self.formalism}')
+        # if self.formalism != Formalism.WT_COEF:
+        #     raise ValueError(
+        #         'This method should be invoked from a wavelet coef object, '
+        #         f'current object is {self.formalism}')
         
         pleaders = np.abs(self.values.squeeze()) ** 2
 
@@ -108,8 +110,8 @@ class ContinuousMRQ:
 
         remove_edges_leaders(pleaders, self.scales, self.sigma)
 
-        return ContinuousMRQ(pleaders, self.sigma, self.scales, self.sfreq,
-                             Formalism.WT_LEADER, p_exp)
+        return CWTLeader(
+            pleaders, self.sigma, self.scales, self.sfreq, p_exp=p_exp)
 
     def compute_wse(self, theta=.5):
    
@@ -130,10 +132,10 @@ class ContinuousMRQ:
             wse[idx_upper, :edge] = np.nan
             wse[idx_upper, -edge:] = np.nan
 
-        return ContinuousMRQ(wse, self.sigma, self.scales, self.sfreq,
-                             Formalism.WSE)
+        return CWSE(wse, self.sigma, self.scales, self.sfreq,
+                    Formalism.WSE, theta)
 
-    def plot(self, ax=None, cbar=True, cmap='cet_fire', vmin=0, vmax=None):
+    def plot(self, ax=None, cbar=True, cmap='flare', vmin=None, vmax=None):
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -146,13 +148,24 @@ class ContinuousMRQ:
         f = np.r_[cwt_freqs[0] / coeff, cwt_freqs, cwt_freqs[-1] * coeff]
         f = np.sqrt(f[1:] * f[:-1])
 
-        qm = ax.pcolormesh(t, f, abs(self.values[:]), rasterized=True, cmap=cmap,
+        qm = ax.pcolormesh(t, f, self.values, rasterized=True, cmap=cmap,
                            vmin=vmin, vmax=vmax)
         ax.set(xlim=(t[0], t[-1]), ylim=(f[0], f[-1]),
                ylabel='Frequency (Hz)', xlabel='Time (s)')
 
         if cbar:
             plt.colorbar(qm, ax=ax, fraction=.1, aspect=8)
+
+
+@dataclass(kw_only=True)
+class CWTLeader(CWT):
+    p_exp: float
+    eta_p: np.ndarray = field(init=False, repr=False)
+    ZPJCorr: np.ndarray = field(init=False, default=None)
+
+@dataclass(kw_only=True)
+class CWSE(CWT):
+    theta: float
 
 def width_from_scale(a, scale):
     return int(2 ** (np.log2(a) - np.log2(scale) + 1)
