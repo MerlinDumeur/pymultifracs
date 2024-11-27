@@ -626,10 +626,11 @@ def compute_wse(wt_coefs, theta=0.5):
 
     for scale, dwt in wt_coefs.values.items():
         lower_scale = max(1,int(scale-scale**(theta))) # On définit une tranche d'échelle J/sqrt(J)
-        # lower_scale = np.min(lower_scale,scale)  # On prend en compte où on dépasse le nombre d'échelle max
+        lower_scale = min(lower_scale,scale)  # On prend en compte où on dépasse le nombre d'échelle max
         # J2 = 1  # Dans les cas des leaders J2=1
 
         wse = np.zeros_like(dwt)  # On initialise le max à 0
+        wse.fill(np.nan)
         for k in range(dwt.shape[0]): # On calcule les coefficient l(J1,k)
             
             for j in range(scale,lower_scale-1,-1): # On parcourt les tranches d'échelle allant de J2 à J1
@@ -639,13 +640,15 @@ def compute_wse(wt_coefs, theta=0.5):
                 cwav = wt_coefs.values[j] # On stock tous les coefs en ondelettes
                 nwav = cwav.shape[0]  # On compte le nombre de coefs
 
-                left_bound = int(max(1, 2^(scale-j) * (k-packet_size)))-1 # On calcule la borne de gauche
-                right_bound = int(min(nwav,2^(scale-j) * (k+packet_size)))-1 # On calcule la borne de droite
+                left_bound = int(max(1, 2**(scale-j) * (k-packet_size+1)))-1 # On calcule la borne de gauche
+                right_bound = int(min(nwav,2**(scale-j) * (k+packet_size+1)))-1 # On calcule la borne de droite
 
-                if right_bound <= left_bound:
-                    continue
+                # if right_bound <= left_bound:
+                    # continue
 
-                wse[k] = np.nanmax(np.r_[wse[k], np.nanmax(abs(cwav[left_bound:right_bound]), axis=0)], axis=0) # On détermine le WSE
+                wse[k] = np.max(np.r_[wse[k], np.max(abs(cwav[left_bound:right_bound]), axis=0)], axis=0) # On détermine le WSE
+
+                # wse[k] = np.nanmax(np.r_[wse[k], np.nanmax(abs(cwav[left_bound:right_bound]), axis=0)], axis=0) # On détermine le WSE
 
         wse_coef.add_values(wse, scale)
 
