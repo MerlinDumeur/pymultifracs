@@ -895,19 +895,7 @@ def compute_aggregate(CDF, j1, j2):
     return agg
 
 
-def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
-                           generalized=False, pelt_jump=1, threshold=2.5,
-                           hilbert_weighted=False, remove_edges=False):
-
-    from .hilbert import HilbertCost, w_hilbert
-    import ruptures as rpt
-
-    # ZPJCorr = leaders._correct_pleaders(cm.j.min(), cm.j.max())
-    # idx_j = np.s_[cm.j.min() - min(leaders.values):
-    #               cm.j.max() - min(leaders.values) + 1]
-
-    # ZPJCorr = leaders._correct_pleaders(cm.j.min(), cm.j.max())#[..., idx_j]
-    # ZPJCorr = np.log(ZPJCorr).transpose(2, 0, 1)
+def _get_CDF(leaders, cm, j1, j2, generalized, verbose):
 
     if generalized:
 
@@ -916,7 +904,7 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
         CDF = {
             j: gen_cdf(
                 np.log(leaders.get_values(j)),
-                C1_array[j_array == j],  #- ZPJCorr[j_array==j],
+                C1_array[j_array == j],  # - ZPJCorr[j_array==j],
                 scale[j_array == j], shape[j_array == j])
             for j in range(j1, j2+1)
         }
@@ -934,6 +922,51 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
             for j in range(j1, j2+1)
         }
 
+    if verbose:
+        plt.figure()
+        plot_cdf(CDF, j1, j2, pval=False)
+        plt.show()
+
+    return CDF, j_array, scale
+
+
+def _get_Hilbert_w(agg, mask_nan_global, idx_range, idx_signal,
+                   hilbert_weighted, skip_scales, j1):
+
+    w = np.r_[
+        [-np.sum((pk * np.log(pk))[pk != 0])
+            for pk
+            in agg[~mask_nan_global, :, idx_range, idx_signal].transpose()]
+    ]
+
+    if not hilbert_weighted:
+        return np.ones_like(w)
+
+    if len(skip_scales) > 0:
+        for scale in skip_scales[(idx_range, idx_signal)]:
+            w[scale-j1] = 0
+
+    w /= w.sum()
+    w *= w.shape[0]
+
+    if verbose:
+        print(f'{w=}')
+
+    return w
+
+
+def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
+                           generalized=False, pelt_jump=1, threshold=2.5,
+                           hilbert_weighted=False, remove_edges=False,
+                           idx_reject=None, n_jobs=1, max_size=None):
+
+    from .hilbert import HilbertCost, w_hilbert
+    import ruptures as rpt
+    from .Pelt import Pelt
+
+    CDF, j_array, scale = _get_CDF(leaders, cm, j1, j2, generalized, verbose)
+    agg = compute_aggregate(CDF, j1, j2)
+
     skip_scales = {}
 
     for idx_range, idx_signal in np.ndindex(CDF[j1].shape[1:]):
@@ -942,49 +975,27 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
             j for j in range(j1, j2+1)
             if scale[j_array == j, idx_range, idx_signal] <= 0]
 
-    if verbose:
-        plt.figure()
-        plot_cdf(CDF, j1, j2, pval=False)
-        plt.show()
+    if idx_reject is None:
 
-    if remove_edges:
-        idx_reject = get_edge_reject(leaders)
-    else:
-        idx_reject = {
-            j: np.zeros_like(CDF[j], dtype=bool) for j in CDF
-            # j: np.zeros((CDF[j].shape[0], CDF[j].shape[2]), dtype=bool)
-            for j in CDF
-        }
-
-    agg = compute_aggregate(CDF, j1, j2)
-    # max_index = agg.shape[0]
-
-    # max_index = CDF[j2].shape[0] * 2 ** (j2 - j1)
+        if remove_edges:
+            idx_reject = get_edge_reject(leaders)
+        else:
+            idx_reject = {
+                j: np.zeros_like(CDF[j], dtype=bool) for j in CDF
+                # j: np.zeros((CDF[j].shape[0], CDF[j].shape[2]), dtype=bool)
+                for j in CDF
+            }
 
     for idx_range, idx_signal in np.ndindex(CDF[j1].shape[1:]):
 
         mask_nan_global = np.isnan(agg[:, :, idx_range, idx_signal]).any(axis=1)
 
-        w = np.r_[
-            [-np.sum((pk * np.log(pk))[pk != 0])
-            for pk
-            in agg[~mask_nan_global, :, idx_range, idx_signal].transpose()]
-        ]
+        w = _get_Hilbert_w(agg, mask_nan_global, idx_range, idx_signal,
+                           hilbert_weighted, skip_scales, j1)
 
-        if not hilbert_weighted:
-            w = np.ones_like(w)
-
-        if len(skip_scales) > 0:
-            for scale in skip_scales[(idx_range, idx_signal)]:
-                w[scale-j1] = 0
-
-        w /= w.sum()
-        w *= w.shape[0]
-
-        if verbose:
-            print(f'{w=}')
-
-        pelt = rpt.Pelt(custom_cost=HilbertCost(w=w), jump=pelt_jump)
+        pelt = Pelt(
+            custom_cost=HilbertCost(w=w), jump=pelt_jump, n_jobs=n_jobs,
+            max_size=max_size)
 
         result = [0] + pelt.fit_predict(
             agg[~mask_nan_global, :, idx_range, idx_signal], pelt_beta)
@@ -1017,11 +1028,26 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
             # mask_nan = np.isnan(agg[:, j, idx_signal, idx_range])
 
             samples = []
+            other_samples = []
+
+            mask_others = np.zeros(agg.shape[0], dtype=bool)
+            max_index = CDF[j2].shape[0] * 2 ** (j2 - (j1 + j))
 
             for i in range(len(result) - 1):
                 samples.append(
                     agg[:, j, idx_range, idx_signal][
                         result_j[i]:result_j[i+1]])
+
+                mask_others[:result_j[i]] = True
+                mask_others[result_j[i+1]:] = True
+
+                mask_others &= ~np.repeat(
+                    idx_reject[j1+j][:max_index, idx_range, idx_signal],
+                    repeats=2 ** j, axis=0)
+
+                other_samples.append(
+                    agg[mask_others, j, idx_range, idx_signal]
+                )
 
             if len(samples) == 1:
                 continue
@@ -1030,13 +1056,11 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
             # bins = np.sort(
             #     np.r_[1, 1-np.geomspace(1 - right_edge, 1, N_bins-1)])
 
-            for i in range(len(samples)):
-
-                samp = samples[i]
+            for samp, other in zip(samples, other_samples):
 
                 # python >= 3.11
                 # other_samples = np.r_[*samples[:i], *samples[i+1:]]
-                other_samples = np.concatenate((*samples[:i], *samples[i+1:]))
+                # other_samples = np.concatenate((*samples[:i], *samples[i+1:]))
 
                 # bins = np.linspace(0, 1, N_bins)
                 # samp_hist, _ = np.histogram(samp, bins=bins)
@@ -1045,12 +1069,16 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
                 # samp_hist = samp_hist / samp_hist.sum()
                 # other_hist = other_hist / other_hist.sum()
 
+                if other.shape[0] == 0:
+                    stat.append(np.inf)
+
                 # stat.append(special.kl_div(samp_hist, other_hist).sum())
-                stat.append(stats.wasserstein_distance(
-                    -np.log(1 - samp),
-                    # python >= 3.11
-                    # -np.log(1 - np.r_[*samples[:i], *samples[i+1:]])))
-                    -np.log(1 - other_samples)))
+                else:
+                    stat.append(stats.wasserstein_distance(
+                        -np.log(1 - samp),
+                        # python >= 3.11
+                        # -np.log(1 - np.r_[*samples[:i], *samples[i+1:]])))
+                        -np.log(1 - other)))
                 # stat.append(spatial.distance.jensenshannon(samp_hist, other_hist))
                 median.append(np.median(samp))
 
@@ -1088,7 +1116,8 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
 
 
 def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
-                 robust_cm=False, verbose=False, generalized=False, remove_edges=False):
+                 robust_cm=False, verbose=False, generalized=False,
+                 remove_edges=False, idx_reject=None, n_jobs=1, max_size=None):
     """Detect outliers in a signal.
 
     Parameters
@@ -1105,18 +1134,28 @@ def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
         Optional, PELT algorithm checks segmentations every `pelt_jump` point.
     robust_cm : bool
         Whether to use robust cumulants in the detection.
-    generalized : bool
-        Whether to use the exponential power distribution model instead of
-        the normal distribution for the log 1-leaders in the detection.
     verbose : bool, optional
         Display figures outlining the detection process. If multiple signals
         are being processed, will only show figures for the first signal.
+    generalized : bool
+        Whether to use the exponential power distribution model instead of
+        the normal distribution for the log 1-leaders in the detection.
+    remove_edges : bool
+        Whether the edge coefficients (nan-valued) should be included in the
+        output.
+    idx_reject : dict[int, ndarray of bool]
+        Indicates prior rejected coefficients: the procedure will then only
+        take into account the coefficients that have not previously been
+        rejected.
+    n_jobs : int
+        Indicated the number of cores to use in the joblib call for parallel
+        computing. -1 uses all cores.
 
     Returns
     -------
     leaders : :class:`.WaveletLeader`
         Wavelet 1-leaders used in the analysis.
-    idx_reject : dict[int, ndarray]
+    idx_reject : dict[int, ndarray of bool]
         Dictionary associating to each scale the boolean mask of indices to
         reject.
 
@@ -1130,22 +1169,25 @@ def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
     p_exp = 1
     n_cumul = 4 if generalized else 2
 
-    leaders = wt_coefs.get_leaders(p_exp, 1, 1)
+    leaders = wt_coefs.get_leaders(p_exp, 1)
 
     j2 = max(sr[1] for sr in scaling_ranges)
     min_scale = min(sr[0] for sr in scaling_ranges)
 
     lwt = mfa(leaders, scaling_ranges=scaling_ranges, n_cumul=n_cumul,
-              robust=robust_cm, min_j=min_scale, estimates='c')
+              robust=robust_cm, min_j=min_scale, estimates='c',
+              idx_reject=idx_reject)
 
     if verbose:
-        lwt.cumulants.plot(j1=min_scale, nrow=4, figsize=(3.3, 4), n_cumul=4)
+        lwt.cumulants.plot(
+            j1=min_scale, nrow=4, figsize=(3.3, 4), n_cumul=n_cumul)
         plt.show()
 
     idx_reject = cluster_reject_leaders(
         min_scale, j2, lwt.cumulants, leaders, verbose=verbose,
         generalized=generalized, pelt_beta=pelt_beta, pelt_jump=pelt_jump,
-        threshold=threshold, remove_edges=remove_edges)
+        threshold=threshold, remove_edges=remove_edges, idx_reject=idx_reject,
+        n_jobs=n_jobs, max_size=max_size)
 
     for j in range(min(idx_reject), max(idx_reject)):
 
@@ -1154,7 +1196,6 @@ def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
 
         combined = (left_reject | right_reject)[:idx_reject[j+1].shape[0]]
         idx_reject[j+1][combined] = True
-        print(combined.shape, idx_reject[j+1].shape)
 
     for j in range(min(idx_reject), max(idx_reject)+1):
 

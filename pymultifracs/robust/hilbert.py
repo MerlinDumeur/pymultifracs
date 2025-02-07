@@ -64,6 +64,13 @@ def _hilbert_cost(X, w):
     return np.sum(distance ** 2)
 
 
+# spec = [
+#     ('model', str),
+#     ('min_size', int)
+# ]
+
+
+# @jitclass(spec)
 class HilbertCost(rpt.base.BaseCost):
     """
     Custom cost class for the ruptures package
@@ -81,6 +88,7 @@ class HilbertCost(rpt.base.BaseCost):
 
         self.signal = signal
         return self
+
 
     def error(self, start, end):
         """
