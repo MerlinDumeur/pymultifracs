@@ -1038,8 +1038,8 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
                     agg[:, j, idx_range, idx_signal][
                         result_j[i]:result_j[i+1]])
 
-                mask_others[:result_j[i]] = True
-                mask_others[result_j[i+1]:] = True
+                mask_others[result_j[0]:result_j[i]] = True
+                mask_others[result_j[i+1]:result_j[i-1]] = True
 
                 mask_others &= ~np.repeat(
                     idx_reject[j1+j][:max_index, idx_range, idx_signal],

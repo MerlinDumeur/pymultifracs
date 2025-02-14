@@ -783,7 +783,7 @@ class WaveletLeader(WaveletDec):
         return self
 
     def check_regularity(self, scaling_ranges, weighted=None,
-                         idx_reject=None, min_j=None):
+                         idx_reject=None, min_j=None, signal_idx=None):
         """
         Verify that the MRQ has enough regularity for analysis.
 
@@ -799,6 +799,8 @@ class WaveletLeader(WaveletDec):
         idx_reject : Dict[int, ndarray]
             Dictionary associating each scale to a boolean array indicating
             whether certain coefficients should be removed.
+        min_j : int | None
+        signal_idx : int | None
         """
 
         if self.p_exp == np.inf:
@@ -808,13 +810,17 @@ class WaveletLeader(WaveletDec):
         eta_p = estimation.estimate_eta_p(
             self.origin_mrq, self.p_exp, scaling_ranges, weighted, idx_reject)
 
-        if eta_p.max() <= 0:
+        sl = np.s_[:]
+        if signal_idx is None:
+            sl = np.s_[:, signal_idx]
+
+        if eta_p[sl].max() <= 0:
             raise ValueError(
                 f"Maximum eta(p) = {eta_p.max()} <= 0, no signal can be "
                 "analyzed. A smaller value of p (or larger value of gamint) "
                 "should be selected.")
 
-        if eta_p.min() <= 0:
+        if eta_p[sl].min() <= 0:
             warnings.warn(
                 f"Minimum eta(p) = {eta_p.min()} <= 0, p-Leaders correction "
                 "cannot be applied. A smaller value of p (or larger value of "
@@ -828,9 +834,11 @@ class WaveletLeader(WaveletDec):
 
     def plot(self, j1, j2, ax=None, vmin=None, vmax=None, cbar=True,
              figsize=(4.5, 1.5), gamma=.3, nan_idx=None, signal_idx=0,
-             cbar_kw=None, cmap='magma'):
+             cbar_kw=None, cmap='magma', check_regularity=True):
 
-        if self.eta_p is None and not np.isinf(self.p_exp):
+        if (self.eta_p is None
+                and not np.isinf(self.p_exp)
+                and check_regularity):
             self.check_regularity([(j1, j2)], None, None)
 
         super().plot(j1, j2, ax, vmin, vmax, cbar, figsize, gamma,

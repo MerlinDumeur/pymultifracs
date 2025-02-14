@@ -106,8 +106,8 @@ def mrw_cumul(shape, c1, c2, L, **kwargs):
         2001
     '''
 
-    H = c1 + c2
-    lam = np.sqrt(-c2)
+    H = c1 + c2/2
+    lam = np.sqrt(abs(c2))
 
     return mrw(shape, H, lam, L, **kwargs)
 

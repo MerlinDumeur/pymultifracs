@@ -186,11 +186,11 @@ class Pelt(BaseEstimator):
                         pen *= .95
                 else:
                     # pen += np.arctan(n_admissible_last - len(admissible)) / np.pi * 4
-                    pen += n_admissible_last - len(admissible)
+                    pen += .1 * (n_admissible_last - len(admissible))
 
                 # trim segments that are too long
 
-                if len(admissible) > 100:
+                if len(admissible) > 400:
                     admissible = [
                         t for t in admissible if bkp - t <= self.max_size
                     ]
