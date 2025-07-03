@@ -560,7 +560,7 @@ def cluster_reject_leaders(j1, j2, cm, leaders, pelt_beta, verbose=False,
 
 def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
                  robust_cm=False, verbose=False, generalized=False,
-                 remove_edges=False, n_jobs=1):
+                 remove_edges=False, n_jobs=1, spread=3):
     """Detect outliers in a signal.
 
     Parameters
@@ -591,6 +591,11 @@ def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
         by the detection algorithm).
     n_jobs : int
         Number of joblib parallel threads to use (across channels).
+    spread : int
+        Number of coefficients neighboring each detected segments that should
+        also be removed. Useful to remove the influence of affected
+        coefficients at the edge of detection, especially in high noise
+        conditions. Should normally be >= 3.
 
     Returns
     -------
@@ -642,8 +647,6 @@ def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
         # print(combined.shape, idx_reject[j+1].shape)
 
     for j in range(min(idx_reject), max(idx_reject)+1):
-
-        spread = 3
 
         for k in range(spread):
 
