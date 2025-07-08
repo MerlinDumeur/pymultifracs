@@ -7,6 +7,7 @@ Authors: Merlin Dumeur <merlin@dumeur.net>
 
 from dataclasses import dataclass, field, InitVar
 import inspect
+import warnings
 
 import numpy as np
 import xarray as xr
@@ -367,10 +368,15 @@ class StructureFunction(ScalingFunction):
 
             for q in self.q:
 
-                self.values.loc[{Dim.q: q, Dim.j: j}] = xr.DataArray(
-                    np.log2(np.nanmean(fast_power(np.abs(c_j.values), q),
-                                       axis=c_j.dims.index(Dim.k_j))),
-                    dims=[d for d in c_j.dims if d != Dim.k_j])
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        'ignore', "Mean of empty slice",
+                        category=RuntimeWarning)
+
+                    self.values.loc[{Dim.q: q, Dim.j: j}] = xr.DataArray(
+                        np.log2(np.nanmean(fast_power(np.abs(c_j.values), q),
+                                           axis=c_j.dims.index(Dim.k_j))),
+                        dims=[d for d in c_j.dims if d != Dim.k_j])
 
             mask_nan = np.isnan(c_j) | np.isinf(c_j)
             N_useful = (~mask_nan).sum(dim=Dim.k_j)
