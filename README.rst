@@ -35,36 +35,4 @@ The initial implementation of the code in this package was based on the Wavelet 
 
 .. For a brief introduction to multifractal analysis, see the file THEORY.ipynb
 
-There are two ways to install this package: either by using a package manager to install the package only, which will make
-the code only usable as an import,
-or by cloning the repository first, and then installing the package which will make it editable
-
-Installing the package only
-===========================
-
-.. code:: shell
-
-    wget https://raw.githubusercontent.com/neurospin/pymultifracs/master/env.yml
-    conda env update -f env.yml --name $ENVNAME
-
-----
-
-Using pip
----------
-
-.. code:: shell
-
-    pip install git+https://github.com/neurospin/pymultifracs
-
-
-
-Cloning the whole repository (including examples)
-=================================================
-
-
-.. code:: shell
-
-    git clone https://github.com/neurospin/pymultifracs
-    pip install -e pymultifracs
-
-For examples to get started, look into the `example/` folder
+.. include:: Installation.rst
