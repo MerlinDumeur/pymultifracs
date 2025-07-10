@@ -591,6 +591,8 @@ def get_outliers(wt_coefs, scaling_ranges, pelt_beta, threshold, pelt_jump=1,
         by the detection algorithm).
     n_jobs : int
         Number of joblib parallel threads to use (across channels).
+
+        .. versionadded:: 0.3.2 Multiprocessing support was added
     spread : int
         Number of coefficients neighboring each detected segments that should
         also be removed. Useful to remove the influence of affected
