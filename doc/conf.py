@@ -396,6 +396,14 @@ source_suffix = {
     '.md': 'markdown'
 }
 
+myst_enable_extensions = [
+    "colon_fence",
+    "deflist",
+    "dollarmath",
+    "smartquotes",
+    # "amsmath"
+]
+
 # %% Adjusting the displayed name of functions
 # https://stackoverflow.com/a/72658470
 
