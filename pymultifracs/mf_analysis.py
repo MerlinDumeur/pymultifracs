@@ -10,7 +10,6 @@ import numpy as np
 from .scalingfunction import Cumulants, StructureFunction, MFSpectrum
 from .autorange import sanitize_scaling_ranges
 from .utils import MFractalVar
-from .bootstrap import _need_redo_bootstrap
 
 
 def mfa(mrq, scaling_ranges, weighted=None, n_cumul=2, q=None,
