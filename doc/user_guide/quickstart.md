@@ -1,6 +1,82 @@
 # PyMultiFracs quickstart
 
-## The ``xarray`` structure
+Multifractal analysis in pymultifracs is split in two steps:
+1. Computing multi-resolution quantities
+2. Estimating the scaling functions (functions of $j$), and their associated scaling exponents:
+    - Structure functions yield the scaling function $\zeta(q)$;
+    - Cumulant scaling functions $C_m(j)$ yield the log-cumulants $c_m$;
+    - The multifractal direct determination method yields pairs $(h(q), D(h(q)))$.
+
+The scaling exponents are estimated by linear regression of the (log) scaling functions against $j$ on a given range of scales $[j_1, j_2]$.
+
+## Multi-resolution quantity
+
+pymultifracs relies on the {py:mod}`pywavelets` implementation of the discrete wavelet transform, and wraps it in the {class}`~pymultifracs.multiresquantity.WaveletDec` class.
+
+An input array $\{x_t\}_{t \in [1, T]}$ is decomposed into wavelet coefficients $c_x(j, k)$, defined at scale $j$ and shift $k$.
+The discrete wavelet transform decomposes the signal into scale-shift space dyadically: $j$ represents the (base 2) logarithm of the inverse normalized frequency. Accordingly, when $j$ increases by 1, the resolution of $k$ is halved.
+
+<!-- For time series, $j$ is proportional to the logarithm of the inverse of the normalized frequency, and the $k$ indices index the temporal dimension, such that the shift corresponding to a time point $t$ may be written $k(t)$. -->
+
+<!-- , which means that the number of coefficients at scale $j$ is proportional to $N$ -->
+<!-- The scale $j=1$ corresponds to the Nyquist frequency, and hypothetically, the scale $j=0$ would correspond to the sampling frequency. -->
+
+The exact correspondance between $j$ and frequency depends on the wavelet family that is chosen. In pymultifracs, frequency may be converted to scale and vice versa using the methods {meth}`~pymultifracs.multiresquantity.WaveletDec.freq2scale` and {meth}`~pymultifracs.multiresquantity.WaveletDec.scale2freq`:
+
+```python
+WT = wavelet_analysis(X)
+# To which scale corresponds the frequency f? Returns a floating number
+WT.freq2scale(f, sfreq)
+# Which frequency corresponds to scale j=4?
+WT.scale2freq(j, sfreq)
+```
+
+### Wavelet ($p$-)leaders
+
+Wavelet coefficients are a natural choice for estimating scaling exponents, due to their dyadic decomposition of the data.
+However, wavelet coefficients are only able to be used for estimating the structure functions for $q \geq 0$, for instance $q=2$ which yields an estimator of the Hurst exponent. $q < 0$ leads to unstable estimation using the wavelet coefficients.
+<!-- However, since wavelet coefficients may take values arbitrarily close to zero, the statistics of their moments for $q < 0$ are not stable. -->
+
+For multifractal analysis, it is important to use a well-behaved multi-resolution quantity, whose choice will determine the **multifractal formalism** upon which the analysis will be based. The wavelet leaders and $p$-leaders, derived from the wavelet coefficicents, allow the estimation of the multifractal spectrum and log-cumulants.
+
+In pymultifracs, wavelet $p$-leaders are simply obtained by using the {meth}`~pymultifracs.multiresquantity.WaveletDec.get_leaders` method.
+
+```python
+WTpL = WT.get_leaders(p_exp=2)
+```
+
+Formally, wavelet leaders correspond to wavelet $p$-leaders when $p\to +\infty$, so they are computed in pymultifracs by passing `p_exp=np.inf`
+
+```python
+WTL = WT.get_leaders(p_exp=np.inf)
+```
+
+### Regularity conditions and fractional integration
+
+In order for multifractal analysis to be meaningful, some regularity conditions of the signal need to be respected. Those conditions depend on the multifractal formalism, but pymultifracs provides a unified method {meth}`~pymultifracs.multiresquantity.WaveletDec.check_regularity`, which will, given a scaling range, verify that the multi-resolution quantity are regular enough.
+
+```python
+WTpL.check_regularity([(3, 8)])
+WTL.check_regularity([(3, 8)])
+```
+This is usually done automatically by {func}`pymultifracs.mfa`.
+
+If the regularity criterion is not met, an error will be raised. In most cases, this can be addressed by fractionally integrating by a factor `gamint`, which is done via {meth}`~pymultifracs.multiresolutionquantity.WaveletDec.integrate`, common to all formalisms.
+
+```python
+WTpL = WT.integrate(gamint=1).get_leaders(2)
+# equivalently,
+WTpL = WT.get_leaders(2).integrate(gamint=1)
+```
+Typically, integrating by a factor gamint means that the multifractal spectrum will be shifted by `gamint` to higher values of $h$, and correspondingly $c_1$ will increase by `gamint` as well
+
+:::{attention}
+Integrating the multi-resolution quantity may affect the estimates beyond a simple shift of the multifractal spectrum, depending on the nature of the data. Before using a high value of gamint, consider other options: remove outliers, switch from wavelet leaders to wavelet $p$-leaders, reduce the value of `p_exp` while ensuring estimates are stable.
+:::
+
+## Multifractal analysis
+
+## The ``xarray.DataArray`` structure
 
 The output of multifractal analysis in pymultifracs are instances of the {class}`xarray.DataArray` class.
 

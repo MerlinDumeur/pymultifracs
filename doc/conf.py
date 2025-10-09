@@ -148,7 +148,7 @@ intersphinx_mapping = {
     'joblib': ('https://joblib.readthedocs.io/en/latest', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable', None),
     'seaborn': ('https://seaborn.pydata.org/', None),
-    'pywavelets': ('https://pywavelets.readthedocs.io/en/latest/', None),
+    'pywavelets': ('https://pywavelets.readthedocs.io/en/latest', None),
     'xarray': ('https://docs.xarray.dev/en/stable', None),
     # "numba": ("https://numba.readthedocs.io/en/latest", None),
     # "joblib": ("https://joblib.readthedocs.io/en/latest", None),
