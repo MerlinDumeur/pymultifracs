@@ -18,7 +18,7 @@
 Introduction
 ============
 
-This package implements wavelet-based multifractal analysis of 1D signals.
+The PyMultiFracs package implements wavelet-based multifractal analysis of 1D signals.
 
 Implemented features:
 
@@ -29,8 +29,17 @@ Implemented features:
 * Bootstrap-derived confidence intervals and automated scaling range selection.
 * Outlier detection.
 
-The initial implementation of the code in this package was based on the Wavelet p-Leader and Bootstrap based MultiFractal analysis (PLBMF) `Matlab toolbox <http://www.ens-lyon.fr/PHYSIQUE/Equipe3/MultiFracs/software.html>`_ written by Patrice Abry, Herwig Wendt and colleagues. For a thorough introduction to multifractal analysis, you may access H. Wendt's PhD thesis available in `his website <https://www.irit.fr/~Herwig.Wendt/data/ThesisWendt.pdf)>`_.
+The initial implementation of the code in this package was based on the Wavelet p-Leader and Bootstrap based MultiFractal analysis (PLBMF) `Matlab toolbox <http://www.ens-lyon.fr/PHYSIQUE/Equipe3/MultiFracs/software.html>`_ written by Patrice Abry, Herwig Wendt and colleagues. For a thorough introduction to multifractal analysis, you may access H. Wendt's PhD thesis available in `his website <https://www.irit.fr/~Herwig.Wendt/data/ThesisWendt.pdf>`_.
 
 To get started, please look at our `documentation <user_guide/index>`.
 
-.. include:: Installation.rst
+Installation
+------------
+
+PyMultiFracs may be installed using pip:
+
+.. code:: shell
+
+    pip install pymultifracs
+
+For a complete installation guide, please check `documentation <user_guide/installation>`.
