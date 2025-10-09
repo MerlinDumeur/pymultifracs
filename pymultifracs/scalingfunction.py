@@ -986,7 +986,8 @@ class MFSpectrum(ScalingFunction):
                     Dim.scaling_range: [scaling_range_to_str(s)
                                         for s in self.scaling_ranges]},
             name=f'$U{self.variable_suffix}(j, q)$')
-        self.V = xr.zeros_like(self.U, name=f'V{self.variable_suffix}(j, q)')
+        self.V = xr.zeros_like(self.U)
+        self.V.name = f'$V{self.variable_suffix}(j, q)$'
 
         if self.bootstrapped_obj is not None:
             self.bootstrapped_obj = self.bootstrapped_obj.spectrum
