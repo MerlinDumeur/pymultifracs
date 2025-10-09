@@ -24,7 +24,7 @@ from sphinx.ext.autosummary.generate import AutosummaryRenderer
 
 # -- Project information -----------------------------------------------------
 
-project = 'PyMultiFracs'
+project = 'pymultifracs'
 copyright = '2020-2025, M. Dumeur, P. Ciuciu, V. van Wassenhove, P. Abry'
 author = 'M. Dumeur, O. D. Domingues, P. Ciuciu, V. van Wassenhove, P. Abry'
 
