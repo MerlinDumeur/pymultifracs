@@ -7,6 +7,7 @@ Authors: Merlin Dumeur <merlin@dumeur.net>
 
 from dataclasses import dataclass, field, InitVar
 import inspect
+import warnings
 
 import numpy as np
 import xarray as xr
@@ -352,10 +353,15 @@ class StructureFunction(ScalingFunction):
         }
 
         # dims q1 q2 j scaling_range channel_left channel_right bootstrap
-        self.values = xr.DataArray(np.zeros(shape), dims=dims, coords=coords)
+        self.values = xr.DataArray(
+            np.zeros(shape), dims=dims, coords=coords,
+            name=f"$S_q{self.variable_suffix}(j)$")
 
         self._compute(mrq, idx_reject)
         self._compute_fit()
+
+        self.slope.name = rf'$\zeta(q){self.variable_suffix}$'
+        # self.intercept.name = rf'$\zeta(q){self.variable_suffix}$'
 
     def _compute(self, mrq, idx_reject):
 
@@ -367,10 +373,15 @@ class StructureFunction(ScalingFunction):
 
             for q in self.q:
 
-                self.values.loc[{Dim.q: q, Dim.j: j}] = xr.DataArray(
-                    np.log2(np.nanmean(fast_power(np.abs(c_j.values), q),
-                                       axis=c_j.dims.index(Dim.k_j))),
-                    dims=[d for d in c_j.dims if d != Dim.k_j])
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        'ignore', "Mean of empty slice",
+                        category=RuntimeWarning)
+
+                    self.values.loc[{Dim.q: q, Dim.j: j}] = xr.DataArray(
+                        np.log2(np.nanmean(fast_power(np.abs(c_j.values), q),
+                                           axis=c_j.dims.index(Dim.k_j))),
+                        dims=[d for d in c_j.dims if d != Dim.k_j])
 
             mask_nan = np.isnan(c_j) | np.isinf(c_j)
             N_useful = (~mask_nan).sum(dim=Dim.k_j)
@@ -682,7 +693,8 @@ class Cumulants(ScalingFunction):
             dims=(*dims, *mrq_dims),
             coords={Dim.j: self.j, Dim.m: self.m,
                     Dim.scaling_range: [scaling_range_to_str(s)
-                                        for s in self.scaling_ranges]}
+                                        for s in self.scaling_ranges]},
+            name=f'$C_m{self.variable_suffix}(j)$',
         )
 
         if robust:
@@ -692,6 +704,9 @@ class Cumulants(ScalingFunction):
 
         self._compute_fit()
         self.log_cumulants = self.slope * np.log2(np.e)
+
+        self.slope.name = f'$c_m{self.variable_suffix}$'
+        self.intercept.name = f'$c_m^0{self.variable_suffix}$'
 
     def __repr__(self):
 
@@ -770,7 +785,7 @@ class Cumulants(ScalingFunction):
                 moments.loc[loc_dict] = xr.DataArray(
                     np.sum(fast_power(T_X_j.values, m),
                            axis=dims.index(Dim.k_j)) / N_useful.values,
-                    dims=[d for d in dims if d != Dim.k_j]
+                    dims=[d for d in dims if d != Dim.k_j],
                 )
 
                 if m == 1:
@@ -969,8 +984,9 @@ class MFSpectrum(ScalingFunction):
             np.zeros((*shape, *mrq_shapes)), dims=(*dims, *mrq_dims),
             coords={Dim.j: self.j, Dim.q: self.q,
                     Dim.scaling_range: [scaling_range_to_str(s)
-                                        for s in self.scaling_ranges]})
-        self.V = xr.zeros_like(self.U)
+                                        for s in self.scaling_ranges]},
+            name=f'$U{self.variable_suffix}(j, q)$')
+        self.V = xr.zeros_like(self.U, name=f'V{self.variable_suffix}(j, q)')
 
         if self.bootstrapped_obj is not None:
             self.bootstrapped_obj = self.bootstrapped_obj.spectrum
@@ -978,6 +994,9 @@ class MFSpectrum(ScalingFunction):
         self._compute(mrq, idx_reject)
         self._compute_fit('U', 'Dq')
         self._compute_fit('V', 'hq')
+
+        self.Dq.name = f'$D{self.variable_suffix}(q)$'
+        self.hq.name = f'$h{self.variable_suffix}(q)$'
 
         self.Dq += 1
 
