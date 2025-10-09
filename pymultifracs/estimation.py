@@ -76,7 +76,7 @@ def estimate_eta_p(wt_coefs, p_exp, scaling_ranges, weighted, idx_reject):
         bootstrapped_obj=bootstrapped_obj)
 
     # shape N_ranges, n_channelnals
-    return wavelet_structure.zeta[0]
+    return wavelet_structure.zeta.isel(q=0)
 
 
 def plot_hmin(wt_coefs, j1, j2_eff, weighted, warn=True):

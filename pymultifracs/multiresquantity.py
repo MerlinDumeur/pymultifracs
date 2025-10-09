@@ -620,7 +620,7 @@ class WaveletDec(MultiResolutionQuantityBase):
                 return super().__getattribute__(name)
 
 
-def _correct_pleaders(wt_leaders, p_exp, min_level, max_level):
+def _correct_pleaders(eta_p, p_exp, min_level, max_level):
     """
     Return p-leader correction factor for finite resolution
     """
@@ -634,7 +634,7 @@ def _correct_pleaders(wt_leaders, p_exp, min_level, max_level):
     # JJ0 shape (n_level,)
 
     # JJ0 = JJ0[None, None, :]
-    eta_p = wt_leaders.eta_p
+    # eta_p = wt_leaders.eta_p
 
     zqhqcorr = np.log2((1 - np.power(2., -JJ0 * eta_p))
                        / (1 - np.power(2., -eta_p)))
@@ -852,7 +852,7 @@ class WaveletLeader(WaveletDec):
             return
 
         self.ZPJCorr = _correct_pleaders(
-            self, self.p_exp, min(self.values), max(self.values))
+            self.eta_p, self.p_exp, min(self.values), max(self.values))
 
         return self.ZPJCorr
 
