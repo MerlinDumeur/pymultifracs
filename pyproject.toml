@@ -41,7 +41,7 @@ bootstrap = ["recombinator"]
 robust = ["statsmodels", "ruptures", "numba", "tqdm"]
 full = ["pymultifracs[bootstrap,robust]"]
 test = ["pytest", "pytest-xdist", "pytest-cov", "statsmodels", "recombinator", "joblib"]
-doc = ["sphinx", "numpydoc", "pydata-sphinx-theme", "sphinx-gallery", "joblib", "pooch", "myst-parser"]
+doc = ["sphinx", "numpydoc", "pydata-sphinx-theme", "sphinx-gallery", "joblib", "pooch", "myst-parser", "sphinx-tippy"]
 dev = ["pymultifracs[bootstrap,robust,test,doc]"]
 
 [tool.setuptools]
