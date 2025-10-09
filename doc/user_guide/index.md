@@ -9,6 +9,7 @@ This guide is an introduction to multifractal analysis with PyMultiFracs.
 whatismfa
 ../Installation.rst
 quickstart
+practical
 ```
 
 <!-- ```{toctree}

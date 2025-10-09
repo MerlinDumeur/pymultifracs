@@ -51,29 +51,6 @@ Formally, wavelet leaders correspond to wavelet $p$-leaders when $p\to +\infty$,
 WTL = WT.get_leaders(p_exp=np.inf)
 ```
 
-### Regularity conditions and fractional integration
-
-In order for multifractal analysis to be meaningful, some regularity conditions of the signal need to be respected. Those conditions depend on the multifractal formalism, but pymultifracs provides a unified method {meth}`~pymultifracs.multiresquantity.WaveletDec.check_regularity`, which will, given a scaling range, verify that the multi-resolution quantity are regular enough.
-
-```python
-WTpL.check_regularity([(3, 8)])
-WTL.check_regularity([(3, 8)])
-```
-This is usually done automatically by {func}`pymultifracs.mfa`.
-
-If the regularity criterion is not met, an error will be raised. In most cases, this can be addressed by fractionally integrating by a factor `gamint`, which is done via {meth}`~pymultifracs.multiresolutionquantity.WaveletDec.integrate`, common to all formalisms.
-
-```python
-WTpL = WT.integrate(gamint=1).get_leaders(2)
-# equivalently,
-WTpL = WT.get_leaders(2).integrate(gamint=1)
-```
-Typically, integrating by a factor gamint means that the multifractal spectrum will be shifted by `gamint` to higher values of $h$, and correspondingly $c_1$ will increase by `gamint` as well
-
-:::{attention}
-Integrating the multi-resolution quantity may affect the estimates beyond a simple shift of the multifractal spectrum, depending on the nature of the data. Before using a high value of gamint, consider other options: remove outliers, switch from wavelet leaders to wavelet $p$-leaders, reduce the value of `p_exp` while ensuring estimates are stable.
-:::
-
 ## Multifractal analysis
 
 ## The ``xarray.DataArray`` structure
