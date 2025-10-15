@@ -22,7 +22,7 @@ def _compute_leaders_jax(wt_coefs_values, p_exp, size, max_level, leader_flag):
 
         coefs = jnp.power(jnp.abs(wt_coefs_values[scale]), p_exp)
 
-        scale_contribution = jnp.zeros((size, *coefs.shape)) - 1
+        scale_contribution = jnp.zeros((size, *coefs.shape))  # - 1
 
         if size > 1:
             idx_size = np.s_[(size-1)//2:-((size-1)//2)]
@@ -43,7 +43,7 @@ def _compute_leaders_jax(wt_coefs_values, p_exp, size, max_level, leader_flag):
 
         max_index = pleader_p[scale-1].shape[0] // 2
 
-        lower_contribution = jnp.zeros((2, *coefs.shape)) - 1
+        lower_contribution = jnp.zeros((2, *coefs.shape))  # - 1
 
         lower_contribution = lower_contribution.at[0, :max_index].set(
             pleader_p[scale-1][::2][:max_index]
