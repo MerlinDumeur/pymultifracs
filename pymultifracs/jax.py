@@ -110,10 +110,17 @@ def _compute_Cm_jax(pleader_p, j1, j2, n_cumul, p, ZPJCorr, validity):
     return Cm
 
 
-def _compute_cm_jax(Cm, j_array, n_cumul):
+def _compute_weights(validity, j1, j2):
+
+    return jnp.stack([
+        jnp.sqrt(validity[j][:, 0].sum()) for j in range(j1, j2+1)
+    ])
+
+
+def _compute_cm_jax(Cm, j_array, n_cumul, weights=None):
 
     fits = [
-        jnp.polyfit(j_array.astype(float), Cm[:, m], 1)
+        jnp.polyfit(j_array.astype(float), Cm[:, m], 1, w=weights)
         for m in range(n_cumul)
     ]
 
