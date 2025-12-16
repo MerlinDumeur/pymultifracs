@@ -120,14 +120,15 @@ def _compute_weights(validity, j1, j2):
 def _compute_cm_jax(Cm, j_array, n_cumul, weights=None):
 
     fits = [
-        jnp.polyfit(j_array.astype(float), Cm[:, m], 1, w=weights)
+        jnp.polyfit(j_array.astype(float), Cm[:, m], 1, w=weights, full=True)
         for m in range(n_cumul)
     ]
 
-    cm = jnp.stack([f[0] for f in fits], axis=0)
-    cm0 = jnp.stack([f[1] for f in fits], axis=0)
+    cm = jnp.stack([f[0][0] for f in fits], axis=0)
+    cm0 = jnp.stack([f[0][1] for f in fits], axis=0)
+    resids = jnp.stack([f[1] for f in fits], axis=0)
 
-    return cm, cm0
+    return cm, cm0, resids
 
 
 def get_validity_coef(values_dict):
