@@ -705,8 +705,10 @@ class Cumulants(ScalingFunction):
         self._compute_fit()
         self.log_cumulants = self.slope * np.log2(np.e)
 
-        self.slope.name = f'$c_m{self.variable_suffix}$'
+        # self.slope.name = f'$c_m{self.variable_suffix}$'
         self.intercept.name = f'$c_m^0{self.variable_suffix}$'
+
+        self.log_cumulants.name = f'$c_m{self.variable_suffix}$'
 
     def __repr__(self):
 
@@ -817,15 +819,15 @@ class Cumulants(ScalingFunction):
 
                     loc_dict = {Dim.m: m, Dim.j: j}
 
-                    if m == 4:
+                    # if m == 4:
 
-                        correction_term = (
-                            moments.loc[loc_dict]
-                            + moments.sel(m=2, j=j) ** 2 * 3)
+                    #     correction_term = (
+                    #         moments.loc[loc_dict]
+                    #         + moments.sel(m=2, j=j) ** 2 * 3)
 
-                        correction_term /= N_useful
+                    #     correction_term /= N_useful
 
-                        self.values.loc[loc_dict] += correction_term
+                    #     self.values.loc[loc_dict] += correction_term
 
                     self.values.loc[loc_dict] *= correction_factor
 
@@ -834,10 +836,13 @@ class Cumulants(ScalingFunction):
     def __getattr__(self, name):
 
         if name[0] == 'c' and len(name) == 2 and name[1:].isdigit():
-            return self.log_cumulants.sel(m=int(name[1]))
+            return self.log_cumulants.sel(m=int(name[1])).rename(
+                self.log_cumulants.name.replace('m', name[1])
+            )
 
         if name[0] == 'C' and len(name) == 2 and name[1:].isdigit():
-            return self.values.sel(m=int(name[1]))
+            return self.values.sel(m=int(name[1])).rename(
+                self.values.name.replace('m', name[1]))
 
         if name == 'M':
             return -self.c2
