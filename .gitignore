@@ -1,5 +1,6 @@
 *.m~
 *~
+.direnv
 
 # Compiled python modules.
 *.pyc

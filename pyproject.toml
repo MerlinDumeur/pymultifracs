@@ -39,10 +39,11 @@ Tracker = "https://github.com/neurospin/pymultifracs/issues/"
 [project.optional-dependencies]
 bootstrap = ["recombinator"]
 robust = ["statsmodels", "ruptures", "numba", "tqdm"]
-full = ["pymultifracs[bootstrap,robust]"]
+jax = ["jax"]
+full = ["pymultifracs[bootstrap,robust,jax]"]
 test = ["pytest", "pytest-xdist", "pytest-cov", "statsmodels", "recombinator", "joblib"]
 doc = ["sphinx", "numpydoc", "pydata-sphinx-theme", "sphinx-gallery", "joblib", "pooch", "myst-parser", "sphinx-tippy"]
-dev = ["pymultifracs[bootstrap,robust,test,doc]"]
+dev = ["pymultifracs[bootstrap,robust,test,doc,jax]"]
 
 [tool.setuptools]
 zip-safe = false
