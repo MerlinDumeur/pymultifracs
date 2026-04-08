@@ -11,6 +11,8 @@ import numpy as np
 
 from . import multiresquantity
 from .utils import fast_power, max_scale_bootstrap
+from .backend import jnp, jit
+from .routines import _compute_leaders, _correct_pleaders
 
 
 # def _check_formalism(p_exp):
@@ -399,6 +401,15 @@ def compute_leaders(wt_coefs, p_exp=np.inf, size=3):
 #                             j2_eff=j2_eff)
 
 
+@jit
+def _integrate_wavelet(wt_coefs, gamint):
+
+    return {
+        scale: wt_coefs[scale] * 2 ** (scale * gamint)
+        for scale in wt_coefs
+    }
+
+
 def integrate_wavelet(wt_coefs, gamint):
     """
     Fractionally integrates the wavelet coef decomposition of a signal
@@ -413,10 +424,8 @@ def integrate_wavelet(wt_coefs, gamint):
         gamint=wt_coefs.gamint + gamint, wt_name=wt_coefs.wt_name,
         n_channel=wt_coefs.n_channel, origin_mrq=wt_coefs)
 
-    for scale in wt_coefs.values:
-
-        wt_int._add_values(
-            wt_coefs.values[scale] * 2 ** (gamint * scale), scale)\
+    for scale, val in _integrate_wavelet(wt_int.values, gamint).items():
+        wt_int._add_values(val, scale)
 
     return wt_int
 

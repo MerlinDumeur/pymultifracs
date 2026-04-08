@@ -3,12 +3,12 @@ JAX-accelerate simulation routines
 """
 
 import jax
-import jax.numpy as jax
+import jax.numpy as jnp
 from pymultifracs.simul.pzutils import generate_z0, generate_temporal_cov_fbm
 
 
-_generate_z0(N, R) = jax.jit(generate_z0, static_argnames=['N', 'R'])
-_generate_temporal_cov_fbm(N, H) = jax.jit(generate_temporal_cov_fbm, static_argnames=['N'])
+_generate_z0 = jax.jit(generate_z0, static_argnames=['N', 'R'])
+_generate_temporal_cov_fbm = jax.jit(generate_temporal_cov_fbm, static_argnames=['N'])
 
 
 @jax.jit(static_argnames=['N', 'R'])

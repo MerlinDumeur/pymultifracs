@@ -3,8 +3,8 @@ from jax.scipy import special
 
 
 def _binom(N, k):
-    return (
-        jnp.exp(special.gammaln(N + 1)
+    return jnp.exp(
+        special.gammaln(N + 1)
         - special.gammaln(k + 1)
         - special.gammaln(N - k + 1)
     )

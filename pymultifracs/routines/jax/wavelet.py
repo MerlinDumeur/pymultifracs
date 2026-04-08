@@ -1,15 +1,19 @@
+"""
+Authors: Merlin Dumeur <merlin@dumeur.net>
+"""
+
 import jax.numpy as jnp
 
 
-def _integrate_jax(wt_coefs_values, gamint, max_level):
-
-    wt_out = {}
-
-    for scale in range(1, max_level + 1):
-
-        wt_out[scale] = wt_coefs_values[scale] * 2 ** (gamint * scale)
-
-    return wt_out
+# def _integrate(wt_coefs_values, gamint, max_level):
+# 
+#     wt_out = {}
+# 
+#     for scale in range(1, max_level + 1):
+# 
+#         wt_out[scale] = wt_coefs_values[scale] * 2 ** (gamint * scale)
+# 
+#     return wt_out
 
 
 def _compute_leaders_jax(wt_coefs_values, p_exp, size, max_level, leader_flag):
@@ -52,7 +56,7 @@ def _compute_leaders_jax(wt_coefs_values, p_exp, size, max_level, leader_flag):
 
         if leader_flag:
 
-            pleader_p[scale] = np.max(np.r_[
+            pleader_p[scale] = jnp.max(np.r_[
                 scale_contribution,
                 .5 * lower_contribution
             ], axis=0)
@@ -92,7 +96,7 @@ def _correct_pleaders_jax(eta_p, p_exp, max_level):
     return ZPJCorr
 
 
-def integrate_wt(wt_coefs, gamint):
+def _integrate_wavelet(wt_coefs, gamint):
 
     return {
         scale: wt_coefs[scale] * 2 ** (scale * gamint)
