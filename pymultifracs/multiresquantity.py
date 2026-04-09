@@ -14,6 +14,7 @@ import pywt
 
 from .utils import get_filter_length, max_scale_bootstrap, mask_reject, \
     AbstractDataclass, _expand_align, Dim
+from .backend import jnp, jit
 from . import viz, wavelet, estimation
 
 
@@ -620,6 +621,7 @@ class WaveletDec(MultiResolutionQuantityBase):
                 return super().__getattribute__(name)
 
 
+@jit(static_argnames=['min_level', 'max_level'])
 def _correct_pleaders(eta_p, p_exp, min_level, max_level):
     """
     Return p-leader correction factor for finite resolution
@@ -636,9 +638,9 @@ def _correct_pleaders(eta_p, p_exp, min_level, max_level):
     # JJ0 = JJ0[None, None, :]
     # eta_p = wt_leaders.eta_p
 
-    zqhqcorr = np.log2((1 - np.power(2., -JJ0 * eta_p))
-                       / (1 - np.power(2., -eta_p)))
-    ZPJCorr = np.power(2, (-1.0 / p_exp) * zqhqcorr)
+    zqhqcorr = jnp.log2((1 - jnp.power(2., -JJ0 * eta_p))
+                        / (1 - jnp.power(2., -eta_p)))
+    ZPJCorr = jnp.power(2, (-1.0 / p_exp) * zqhqcorr)
 
     # ZPJCorr shape (n_ranges, n_rep, n_level)
     # wt_leaders shape (n_coef_j, n_rep)
@@ -647,7 +649,7 @@ def _correct_pleaders(eta_p, p_exp, min_level, max_level):
     #         wt_leaders.values[j][:, None, :]*ZPJCorr[None, :, :, ind_j]
 
     # ZPJCorr.where(eta_p <= 0, 1)
-    ZPJCorr = xr.where(eta_p <= 0, 1, ZPJCorr)
+    ZPJCorr = jnp.where(eta_p <= 0, 1, ZPJCorr)
     # ZPJCorr.values[eta_p <= 0] = 1
 
     return ZPJCorr

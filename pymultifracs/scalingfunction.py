@@ -20,6 +20,7 @@ from .regression import prepare_weights, prepare_regression, \
 from .autorange import compute_Lambda, compute_R, find_max_lambda
 from .utils import fast_power, mask_reject, isclose, fixednansum, \
     AbstractDataclass, Formalism, Dim, _expand_align, scaling_range_to_str
+from .backend import jnp, jit
 from . import multiresquantity, viz
 
 
@@ -91,6 +92,31 @@ class AbstractScalingFunction(AbstractDataclass):
         return self.__getattribute__(name)
 
 
+def _get_bootstrap_weights(sf, j_min, j_max):
+    
+    if sf.bootstrapped_obj is None:
+        # Asking for bootstrap-derived weights from the bootstrapped data:
+        # Avoid double bootstrap by returning the std deviation of the
+        # bootstrap-dervied scaling functions.
+
+        return sf.std_values(value_name).sel(j=slice(j_min, j_max))
+
+    if j_min < sf.bootstrapped_obj.j.min():
+        raise ValueError(
+            f"Bootstrap minimum scale "
+            f"{bootstrapped_obj.j.min()} inferior to minimum "
+            f"scale {j_min} used in estimation")
+
+    return bootstrapped_obj.std_values(value_name).sel(
+        j=slice(j_min, j_max))
+
+
+def _compute_fit(values, weights, scaling_ranges, j, out_name):
+    pass
+
+    
+    
+        
 @dataclass(kw_only=True)
 class ScalingFunction(AbstractScalingFunction):
     """"
@@ -211,57 +237,30 @@ class ScalingFunction(AbstractScalingFunction):
         j_max = int(j2 - self.j.min() + 1)
 
         return j1, j2, j_min, j_max
+        
+    
+    def _get_weights(self, j, j_min, j_max):
+        
+        return prepare_weights(
+            lambda : self.get_nj_interv(j_min, j_max), self.weighted,
+            self.scaling_ranges, j,
+            lambda : _get_bootstrap_weights(self, j_min, j_max)
+        )
 
     def _compute_fit(self, value_name='values', out_name=None):
 
         values = getattr(self, value_name)
 
-        # slope = np.zeros(
-        #     (values.shape[0], len(self.scaling_ranges),
-        #      values.shape[-1]))
-
         x, n_ranges, j_min, j_max, _, _ = prepare_regression(
             self.scaling_ranges, self.j, values.dims)
-
-        # self.intercept = np.zeros_like(slope)
-
         y = values.sel(j=slice(j_min, j_max))
-
-        if self.weighted == 'bootstrap':
-
-            if self.bootstrapped_obj is None:
-
-                std = self.std_values(value_name).sel(j=slice(j_min, j_max))
-
-            else:
-
-                if j_min < self.bootstrapped_obj.j.min():
-                    raise ValueError(
-                        f"Bootstrap minimum scale "
-                        f"{self.bootstrapped_obj.j.min()} inferior to minimum "
-                        f"scale {j_min} used in estimation")
-
-                # std_slice = np.s_[
-                #     int(j_min - self.bootstrapped_obj.j.min()):
-                #     int(j_max - self.bootstrapped_obj.j.min() + 1)]
-
-                std = self.bootstrapped_obj.std_values(value_name).sel(
-                    j=slice(j_min, j_max))
-
-        else:
-            std = None
-
-        self.weights = prepare_weights(
-            self.get_nj_interv, self.weighted, n_ranges, j_min, j_max,
-            self.scaling_ranges, y, std)
-
-        # nan_weighting = np.ones_like(y)
-        # nan_weighting[np.isnan(y)] = np.nan
-
-        # self.weights *= nan_weighting
-
+        
+        print(y.j)
+    
+        self.weights = jnp.where(np.isnan(y), jnp.nan, self._get_weights(y.j, j_min, j_max))
+    
         slope, self.intercept = linear_regression(x, y, self.weights)
-
+    
         if out_name is not None:
             slope = setattr(self, out_name, slope)
         else:

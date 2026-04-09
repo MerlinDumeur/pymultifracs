@@ -8,11 +8,12 @@ from math import floor
 import numpy as np
 import xarray as xr
 
+from .backend import jnp, jit
+
 from .utils import Dim
 
 
-def prepare_weights(sf_nj_fun, weighted, n_ranges, j_min, j_max,
-                    scaling_ranges, y, std=None):
+def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
     """
     Calculate regression weights.
     """
@@ -25,9 +26,12 @@ def prepare_weights(sf_nj_fun, weighted, n_ranges, j_min, j_max,
         #     # (1, 1, n_ranges, 1)
         # )
 
-        w = sf_nj_fun(floor(j_min), floor(j_max)).astype(float)#.copy(deep=True)
+        w = sf_nj_fun().astype(float)#.copy(deep=True)
 
     elif weighted == 'bootstrap':
+        
+        # Collect the standard deviation of the bootstrapped objects
+        std = std()
 
         if mask := np.isclose(std.values, 0).any():
             # std.where(np.isclose(std.values, 0), std.where(std > 0).min())
@@ -40,13 +44,14 @@ def prepare_weights(sf_nj_fun, weighted, n_ranges, j_min, j_max,
         if std.ndim == 2:
             # TODO check this
             raise ValueError('')
+            n_ranges = len(scaling_ranges)
             w = np.tile(std[:, :, None, None], (1, 1, n_ranges, 1)) ** 2
         # std shape (n_moments, n_scales, n_scaling_ranges, n_channel)
         else:
             w = std ** 2
 
     else:  # weighted is None
-        w = xr.ones_like(y)
+        w = xr.DataArray(jnp.ones(len(j)), coords=j.coords)
 
     if Dim.scaling_range not in w.dims:
         w = w.expand_dims({Dim.scaling_range: len(scaling_ranges)}).copy()
@@ -56,7 +61,7 @@ def prepare_weights(sf_nj_fun, weighted, n_ranges, j_min, j_max,
 
     # w.where(np.isnan(y), np.nan)
     # w.values[np.isnan(y)] = np.nan
-    w = w.where(~np.isnan(y), np.nan)
+#     w = w.where(~np.isnan(y), np.nan)
 
     # if np.isnan(y).any():
     #     mask = np.ones_like(y)
@@ -106,6 +111,7 @@ def linear_regression(x, y, nj, return_variance=False):
 
     # bj = np.array(nj, dtype=np.float)
     assert isinstance(nj, xr.DataArray)
+    
     # assert nj.shape[1] == x.shape[1]
 
     # slope, intercept = np.polyfit(x, y, 1, )
