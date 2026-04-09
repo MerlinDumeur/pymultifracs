@@ -15,7 +15,6 @@ try:
 except:
     pass
 
-
 def multivariate_fgn(n_samples, n_variate, H, rho=0.0, **fgn_kwargs):
     """
     Generates a N-variate fractional with a given correlation structure

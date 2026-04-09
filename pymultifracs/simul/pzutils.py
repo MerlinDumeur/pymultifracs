@@ -13,7 +13,7 @@ from scipy import linalg
 
 
 def generate_temporal_cov_fbm(N, H):
-    
+
     n = np.arange(N)
     
     return (
