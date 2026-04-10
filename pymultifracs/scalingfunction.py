@@ -262,13 +262,16 @@ class ScalingFunction(AbstractScalingFunction):
 
         output = xr.apply_ufunc(
             linear_regression_ufunc,
-            y.coords[Dim.j].astype(float), y, self.weights,
+            y.coords[Dim.j].values.astype(float), y, self.weights,
             input_core_dims=[[Dim.j], [Dim.j], [Dim.j]],
-            output_core_dims=[['coef']],
+            output_core_dims=[[]],
             join='outer',
+            # dataset_join='outer',
             vectorize=False,
+            # output_sizes={'coef': 2},
+            # output_dtypes=[np.float32]
         )
-        
+
         1/0
 
         if out_name is not None:

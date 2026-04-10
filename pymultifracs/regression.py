@@ -11,7 +11,7 @@ import xarray as xr
 
 from .backend import jnp, jit, vmap
 
-from .utils import Dim
+from .utils import Dim, scaling_range_to_str
 
 
 def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
@@ -55,7 +55,9 @@ def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
         w = xr.DataArray(jnp.ones(len(j)), coords=j.coords)
 
     if Dim.scaling_range not in w.dims:
-        w = w.expand_dims({Dim.scaling_range: len(scaling_ranges)}).copy()
+        w = w.expand_dims({Dim.scaling_range: [
+                scaling_range_to_str(s) for s in scaling_ranges
+            ]}).copy()
 
     for i, (j1, j2) in enumerate(scaling_ranges):
 
@@ -105,13 +107,13 @@ def prepare_regression(scaling_ranges, j, dims):
     return x, n_ranges, j_min, j_max, j_min - j.min(), j_max - j.min() + 1
 
 
-@partial(jnp.vectorize, signature='(n),(n),(n)->(2)')
+@partial(jnp.vectorize, signature='(n),(n),(n)->()')
 def linear_regression_ufunc(x, y, weights):
     """
     Performs a single (weighted) linear regression.
     Meant to be called with :func:`xr.apply_ufunc`.
     """
-    return jnp.polyfit(x, y, w=weights, full=False, deg=1)
+    return jnp.polyfit(x, y, w=weights, full=False, deg=1)[0]
 
 
 def linear_regression(x, y, nj, return_variance=False):
