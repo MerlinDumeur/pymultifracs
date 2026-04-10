@@ -4,11 +4,12 @@ Authors: Omar D. Domingues <omar.darwiche-domingues@inria.fr>
 """
 
 from math import floor
+from functools import partial
 
 import numpy as np
 import xarray as xr
 
-from .backend import jnp, jit
+from .backend import jnp, jit, vmap
 
 from .utils import Dim
 
@@ -95,7 +96,7 @@ def prepare_regression(scaling_ranges, j, dims):
 
     # same shape as scaling function
     x = xr.DataArray(
-        np.arange(j_min, j_max + 1),
+        np.arange(j_min, j_max + 1).astype(float),
         coords={'j': np.arange(j_min, j_max + 1)}
     )
     # x = x.expand_dims([d for d in dims if d != Dim.j])
@@ -104,12 +105,13 @@ def prepare_regression(scaling_ranges, j, dims):
     return x, n_ranges, j_min, j_max, j_min - j.min(), j_max - j.min() + 1
 
 
-def linear_regression_ufunc(x, y, weights, full=False):
+@partial(jnp.vectorize, signature='(n),(n),(n)->(2)')
+def linear_regression_ufunc(x, y, weights):
     """
     Performs a single (weighted) linear regression.
     Meant to be called with :func:`xr.apply_ufunc`.
     """
-    return jnp.polyfit(x, y, w=weights, full=full)
+    return jnp.polyfit(x, y, w=weights, full=False, deg=1)
 
 
 def linear_regression(x, y, nj, return_variance=False):

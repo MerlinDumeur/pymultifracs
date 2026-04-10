@@ -25,8 +25,8 @@ def multivariate_fgn(n_samples, n_variate, H, rho=0.0, **fgn_kwargs):
         Hurst exponent, should be in (0, 1).
     rho: float | ndarray
         Correlation coefficient between fGns if float, gets promoted to
-        a correlation matrix filled with off diagonal elements taking the value passed to
-        `rho`.
+        a correlation matrix filled with off diagonal elements taking the value
+        passed to `rho`.
     fgn_kwargs: dict
         Arguments to pass to the fgn() call.
 

@@ -16,7 +16,7 @@ from scipy import special
 import matplotlib.pyplot as plt
 
 from .regression import prepare_weights, prepare_regression, \
-    linear_regression, compute_R2, compute_RMSE
+    linear_regression, compute_R2, compute_RMSE, linear_regression_ufunc
 from .autorange import compute_Lambda, compute_R, find_max_lambda
 from .utils import fast_power, mask_reject, isclose, fixednansum, \
     AbstractDataclass, Formalism, Dim, _expand_align, scaling_range_to_str
@@ -260,7 +260,16 @@ class ScalingFunction(AbstractScalingFunction):
 
         self.weights = self._get_weights(y.j, j_min, j_max)
 
-        slope, self.intercept = linear_regression(x, y, self.weights)
+        output = xr.apply_ufunc(
+            linear_regression_ufunc,
+            y.coords[Dim.j].astype(float), y, self.weights,
+            input_core_dims=[[Dim.j], [Dim.j], [Dim.j]],
+            output_core_dims=[['coef']],
+            join='outer',
+            vectorize=False,
+        )
+        
+        1/0
 
         if out_name is not None:
             slope = setattr(self, out_name, slope)
