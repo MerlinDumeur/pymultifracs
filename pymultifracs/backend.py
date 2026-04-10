@@ -1,24 +1,35 @@
+import os
+
 JAX_AVAILABLE = False
+PYMFA_USE_JAX = bool(os.getenv('PYMFA_USE_JAX', 1))
 
 try:
     import jax
+    JAX_AVAILABLE = True
+except ImportError:
+    jax = None
+
+if JAX_AVAILABLE and PYMFA_USE_JAX:
     import jax.numpy as jnp
     from jax import jit, vmap
-    
+
     print(f'JAX:{jax.__version__} found, using JAX routines')
-    
+
     JAX_AVAILABLE = True
-    
+
     try:
         import xarray_jax
     except ImportError:
         print('xarray_jax not found, some features may be broken')
-    
-except ImportError:
-    jax = None
+
+else:
+
+    if JAX_AVAILABLE:
+        print('PYMFA_USE_JAX set to 0, using numpy routines')
+    else:
+        print('JAX not found, using numpy routines')
+
     import numpy as jnp
-    
+
     def jit(f, *a, **k): return f
     def vmap(f, *a, **k): return f
-    
-    print('JAX not found, using numpy routines')

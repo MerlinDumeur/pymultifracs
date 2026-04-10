@@ -20,7 +20,7 @@ from .regression import prepare_weights, prepare_regression, \
 from .autorange import compute_Lambda, compute_R, find_max_lambda
 from .utils import fast_power, mask_reject, isclose, fixednansum, \
     AbstractDataclass, Formalism, Dim, _expand_align, scaling_range_to_str
-from .backend import jnp, jit
+from .backend import jnp, jit, JAX_AVAILABLE
 from . import multiresquantity, viz
 
 
@@ -93,7 +93,7 @@ class AbstractScalingFunction(AbstractDataclass):
 
 
 def _get_bootstrap_weights(sf, j_min, j_max):
-    
+
     if sf.bootstrapped_obj is None:
         # Asking for bootstrap-derived weights from the bootstrapped data:
         # Avoid double bootstrap by returning the std deviation of the
@@ -114,9 +114,9 @@ def _get_bootstrap_weights(sf, j_min, j_max):
 def _compute_fit(values, weights, scaling_ranges, j, out_name):
     pass
 
-    
-    
-        
+
+
+
 @dataclass(kw_only=True)
 class ScalingFunction(AbstractScalingFunction):
     """"
@@ -237,14 +237,13 @@ class ScalingFunction(AbstractScalingFunction):
         j_max = int(j2 - self.j.min() + 1)
 
         return j1, j2, j_min, j_max
-        
-    
+
     def _get_weights(self, j, j_min, j_max):
-        
+
         return prepare_weights(
-            lambda : self.get_nj_interv(j_min, j_max), self.weighted,
+            lambda: self.get_nj_interv(j_min, j_max), self.weighted,
             self.scaling_ranges, j,
-            lambda : _get_bootstrap_weights(self, j_min, j_max)
+            lambda: _get_bootstrap_weights(self, j_min, j_max)
         )
 
     def _compute_fit(self, value_name='values', out_name=None):
@@ -254,13 +253,15 @@ class ScalingFunction(AbstractScalingFunction):
         x, n_ranges, j_min, j_max, _, _ = prepare_regression(
             self.scaling_ranges, self.j, values.dims)
         y = values.sel(j=slice(j_min, j_max))
-        
-        print(y.j)
-    
-        self.weights = jnp.where(np.isnan(y), jnp.nan, self._get_weights(y.j, j_min, j_max))
-    
+
+        # self.weights = xr.where(
+        #     jnp.isnan(y), jnp.nan, self._get_weights(y.j, j_min, j_max)
+        # )
+
+        self.weights = self._get_weights(y.j, j_min, j_max)
+
         slope, self.intercept = linear_regression(x, y, self.weights)
-    
+
         if out_name is not None:
             slope = setattr(self, out_name, slope)
         else:

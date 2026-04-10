@@ -29,7 +29,7 @@ def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
         w = sf_nj_fun().astype(float)#.copy(deep=True)
 
     elif weighted == 'bootstrap':
-        
+
         # Collect the standard deviation of the bootstrapped objects
         std = std()
 
@@ -57,7 +57,19 @@ def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
         w = w.expand_dims({Dim.scaling_range: len(scaling_ranges)}).copy()
 
     for i, (j1, j2) in enumerate(scaling_ranges):
-        w[{Dim.scaling_range: i, Dim.j: (w.j > j2) | (w.j < j1)}] = np.nan
+
+        # Where j is outside the scaling range, set the weights to zero
+        j1 = xr.DataArray(
+            jnp.array([sr[0] for sr in scaling_ranges]),
+            coords=[w.coords[Dim.scaling_range]], dims=Dim.scaling_range)
+        j2 = xr.DataArray(
+            jnp.array([sr[1] for sr in scaling_ranges]),
+            coords=[w.coords[Dim.scaling_range]], dims=Dim.scaling_range)
+
+        # if (idx_out := (j < j1) | (j > j2)).any():
+        w = xr.where((j < j1) | (j > j2), 0, w)
+
+        # w[{Dim.scaling_range: i, Dim.j: (w.j > j2) | (w.j < j1)}] = jnp.nan
 
     # w.where(np.isnan(y), np.nan)
     # w.values[np.isnan(y)] = np.nan
@@ -83,11 +95,21 @@ def prepare_regression(scaling_ranges, j, dims):
 
     # same shape as scaling function
     x = xr.DataArray(
-        np.arange(j_min, j_max + 1), coords={'j': np.arange(j_min, j_max + 1)})
+        np.arange(j_min, j_max + 1),
+        coords={'j': np.arange(j_min, j_max + 1)}
+    )
     # x = x.expand_dims([d for d in dims if d != Dim.j])
     # x = x.transpose(*dims)
 
     return x, n_ranges, j_min, j_max, j_min - j.min(), j_max - j.min() + 1
+
+
+def linear_regression_ufunc(x, y, weights, full=False):
+    """
+    Performs a single (weighted) linear regression.
+    Meant to be called with :func:`xr.apply_ufunc`.
+    """
+    return jnp.polyfit(x, y, w=weights, full=full)
 
 
 def linear_regression(x, y, nj, return_variance=False):
@@ -111,7 +133,7 @@ def linear_regression(x, y, nj, return_variance=False):
 
     # bj = np.array(nj, dtype=np.float)
     assert isinstance(nj, xr.DataArray)
-    
+
     # assert nj.shape[1] == x.shape[1]
 
     # slope, intercept = np.polyfit(x, y, 1, )

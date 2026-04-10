@@ -10,10 +10,6 @@ import numpy as np
 from scipy import linalg
 from .pzutils import gaussian_cme, gaussian_chol
 
-try:
-    from ..jax.simul import _gaussian_cme
-except:
-    pass
 
 def multivariate_fgn(n_samples, n_variate, H, rho=0.0, **fgn_kwargs):
     """
