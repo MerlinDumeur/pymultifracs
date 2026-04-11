@@ -20,14 +20,7 @@ def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
     """
 
     if weighted == 'Nj':
-
-        # w = np.tile(
-        #     sf_nj_fun(floor(j_min), floor(j_max)).astype(float)[None, :]
-        #     #     None, :, None, :],
-        #     # (1, 1, n_ranges, 1)
-        # )
-
-        w = sf_nj_fun().astype(float)#.copy(deep=True)
+        w = sf_nj_fun().astype(float)  # .copy(deep=True)
 
     elif weighted == 'bootstrap':
 
@@ -35,7 +28,6 @@ def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
         std = std()
 
         if mask := np.isclose(std.values, 0).any():
-            # std.where(np.isclose(std.values, 0), std.where(std > 0).min())
             std.values[mask] = std.where(std > 0).min()
 
         std = 1 / std
@@ -76,7 +68,7 @@ def prepare_weights(sf_nj_fun, weighted, scaling_ranges, j, std=None):
 
     # w.where(np.isnan(y), np.nan)
     # w.values[np.isnan(y)] = np.nan
-#     w = w.where(~np.isnan(y), np.nan)
+    # w = w.where(~np.isnan(y), np.nan)
 
     # if np.isnan(y).any():
     #     mask = np.ones_like(y)
@@ -97,23 +89,24 @@ def prepare_regression(scaling_ranges, j, dims):
     j_max = max(sr[1] for sr in scaling_ranges)
 
     # same shape as scaling function
-    x = xr.DataArray(
-        np.arange(j_min, j_max + 1).astype(float),
-        coords={'j': np.arange(j_min, j_max + 1)}
-    )
+    # x = xr.DataArray(
+    #     np.arange(j_min, j_max + 1).astype(float),
+    #     coords={'j': np.arange(j_min, j_max + 1)}
+    # )
     # x = x.expand_dims([d for d in dims if d != Dim.j])
     # x = x.transpose(*dims)
 
-    return x, n_ranges, j_min, j_max, j_min - j.min(), j_max - j.min() + 1
+    return n_ranges, j_min, j_max, j_min - j.min(), j_max - j.min() + 1
 
 
-@partial(jnp.vectorize, signature='(n),(n),(n)->()')
+@jit
+@partial(jnp.vectorize, signature='(n),(n),(n)->(2)')
 def linear_regression_ufunc(x, y, weights):
     """
     Performs a single (weighted) linear regression.
     Meant to be called with :func:`xr.apply_ufunc`.
     """
-    return jnp.polyfit(x, y, w=weights, full=False, deg=1)[0]
+    return jnp.polyfit(x, y, w=weights, full=False, deg=1)
 
 
 def linear_regression(x, y, nj, return_variance=False):

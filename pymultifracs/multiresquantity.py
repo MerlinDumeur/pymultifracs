@@ -638,19 +638,14 @@ def _correct_pleaders(eta_p, p_exp, min_level, max_level):
     # JJ0 = JJ0[None, None, :]
     # eta_p = wt_leaders.eta_p
 
-    zqhqcorr = jnp.log2((1 - jnp.power(2., -JJ0 * eta_p))
-                        / (1 - jnp.power(2., -eta_p)))
-    ZPJCorr = jnp.power(2, (-1.0 / p_exp) * zqhqcorr)
+    zqhqcorr = xr.apply_ufunc(
+        jnp.log2,
+        1 - 2 ** (-JJ0 * eta_p) / (1 - 2 ** -eta_p)
+    )
+    ZPJCorr = 2 ** ((-1.0 / p_exp) * zqhqcorr)
 
-    # ZPJCorr shape (n_ranges, n_rep, n_level)
-    # wt_leaders shape (n_coef_j, n_rep)
-    # for ind_j, j in enumerate(JJ):
-    #     wt_leaders.values[j] = \
-    #         wt_leaders.values[j][:, None, :]*ZPJCorr[None, :, :, ind_j]
-
-    # ZPJCorr.where(eta_p <= 0, 1)
-    ZPJCorr = jnp.where(eta_p <= 0, 1, ZPJCorr)
-    # ZPJCorr.values[eta_p <= 0] = 1
+    # No correction for unreliable eta_p values
+    ZPJCorr = xr.where(eta_p <= 0, 1, ZPJCorr)
 
     return ZPJCorr
 

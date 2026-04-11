@@ -12,6 +12,7 @@ except ImportError:
 if JAX_AVAILABLE and PYMFA_USE_JAX:
     import jax.numpy as jnp
     from jax import jit, vmap
+    from jax.lax import cond as lax_cond
 
     print(f'JAX:{jax.__version__} found, using JAX routines')
 
@@ -33,3 +34,10 @@ else:
 
     def jit(f, *a, **k): return f
     def vmap(f, *a, **k): return f
+
+    def lax_cond(cond, true_fun, false_fun, *operands):
+
+        if cond:
+            return true_fun(*operands)
+
+        return false_fun(*operands)

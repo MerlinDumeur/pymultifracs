@@ -6,6 +6,7 @@ Authors: Merlin Dumeur <merlin@dumeur.net>
 # pylint: disable=W0221
 
 from dataclasses import dataclass, field, InitVar
+from functools import partial
 import inspect
 import warnings
 
@@ -20,7 +21,7 @@ from .regression import prepare_weights, prepare_regression, \
 from .autorange import compute_Lambda, compute_R, find_max_lambda
 from .utils import fast_power, mask_reject, isclose, fixednansum, \
     AbstractDataclass, Formalism, Dim, _expand_align, scaling_range_to_str
-from .backend import jnp, jit, JAX_AVAILABLE
+from .backend import jnp, jit, JAX_AVAILABLE, lax_cond
 from . import multiresquantity, viz
 
 
@@ -92,7 +93,7 @@ class AbstractScalingFunction(AbstractDataclass):
         return self.__getattribute__(name)
 
 
-def _get_bootstrap_weights(sf, j_min, j_max):
+def _get_bootstrap_weights(sf, j_min, j_max, value_name=None):
 
     if sf.bootstrapped_obj is None:
         # Asking for bootstrap-derived weights from the bootstrapped data:
@@ -104,17 +105,15 @@ def _get_bootstrap_weights(sf, j_min, j_max):
     if j_min < sf.bootstrapped_obj.j.min():
         raise ValueError(
             f"Bootstrap minimum scale "
-            f"{bootstrapped_obj.j.min()} inferior to minimum "
+            f"{sf.bootstrapped_obj.j.min()} inferior to minimum "
             f"scale {j_min} used in estimation")
 
-    return bootstrapped_obj.std_values(value_name).sel(
+    return sf.bootstrapped_obj.std_values(value_name).sel(
         j=slice(j_min, j_max))
 
 
 def _compute_fit(values, weights, scaling_ranges, j, out_name):
     pass
-
-
 
 
 @dataclass(kw_only=True)
@@ -238,41 +237,39 @@ class ScalingFunction(AbstractScalingFunction):
 
         return j1, j2, j_min, j_max
 
-    def _get_weights(self, j, j_min, j_max):
+    def _get_weights(self, j, j_min, j_max, value_name):
 
         return prepare_weights(
             lambda: self.get_nj_interv(j_min, j_max), self.weighted,
             self.scaling_ranges, j,
-            lambda: _get_bootstrap_weights(self, j_min, j_max)
+            lambda: _get_bootstrap_weights(self, j_min, j_max, value_name)
         )
 
     def _compute_fit(self, value_name='values', out_name=None):
 
         values = getattr(self, value_name)
 
-        x, n_ranges, j_min, j_max, _, _ = prepare_regression(
+        n_ranges, j_min, j_max, _, _ = prepare_regression(
             self.scaling_ranges, self.j, values.dims)
+
         y = values.sel(j=slice(j_min, j_max))
 
-        # self.weights = xr.where(
-        #     jnp.isnan(y), jnp.nan, self._get_weights(y.j, j_min, j_max)
-        # )
+        self.weights = self._get_weights(y.j, j_min, j_max, value_name)
 
-        self.weights = self._get_weights(y.j, j_min, j_max)
+        y = xr.where(self.weights == 0, 0, y)
 
         output = xr.apply_ufunc(
             linear_regression_ufunc,
             y.coords[Dim.j].values.astype(float), y, self.weights,
             input_core_dims=[[Dim.j], [Dim.j], [Dim.j]],
-            output_core_dims=[[]],
-            join='outer',
-            # dataset_join='outer',
+            output_core_dims=[['coef']],
+            join='inner',
             vectorize=False,
-            # output_sizes={'coef': 2},
-            # output_dtypes=[np.float32]
+            output_sizes={'coef': 2},
         )
 
-        1/0
+        slope = output.isel(coef=0)
+        self.intercept = output.isel(coef=1)
 
         if out_name is not None:
             slope = setattr(self, out_name, slope)
@@ -614,6 +611,71 @@ class StructureFunction(ScalingFunction):
             plt.savefig(filename)
 
 
+def _cumulant_bias_correction(C, max_cumul: int, N_useful: int):
+    
+    correction_factor = 1
+
+    for m in range(2, max_cumul + 1):
+
+        correction_factor *= N_useful / (N_useful - (m-1))
+        C[m-1] = C[m-1] * correction_factor
+
+    return C
+
+def _cumulant_ufunc(X, mask_nan, max_cumul: int, bias_correction: bool, N_useful: int):
+
+    Mu = []
+    C = []
+
+    for m in range(1, max_cumul + 1):
+        Mu.append(jnp.sum(X ** m, where=~mask_nan))
+
+    C.append(Mu[0])
+
+    for i, m in enumerate(range(2, max_cumul + 1)):
+ 
+        aux = jnp.zeros_like(C[0])
+
+        for n in np.arange(1, m):
+            aux = aux + (special.binom(m-1, n-1) * C[n-1] * Mu[m-n])
+
+        C.append(Mu[m-1] - aux)
+
+    branch_true = lambda C, N_useful:  _cumulant_bias_correction(C, max_cumul, N_useful)
+    branch_false = lambda C, _: C
+
+    return jnp.r_[*lax_cond(
+        bias_correction,
+        branch_true,
+        branch_false,
+        C, N_useful 
+    )]
+
+
+def _return_nan(X, mask_nan, max_cumul: int, bias_correction: bool, N_useful: int):
+    return jnp.zeros((max_cumul)) + jnp.nan
+
+
+# @jit(static_argnames=['max_cumul', 'bias_correction'])
+@partial(jnp.vectorize, signature='(n),(n)->(m)', excluded={2, 3})
+def cumulant_ufunc(X, reject_mask, max_cumul: int, bias_correction: bool):
+
+    X = jnp.abs(X)
+    X = jnp.log(X)
+
+    mask_nan = jnp.isnan(X) | jnp.isinf(X) | reject_mask
+
+    N_useful = (~mask_nan).sum()
+
+    branch_true = lambda X, mask_nan, N_useful: _return_nan(X, mask_nan, max_cumul, bias_correction, N_useful)
+    branch_false = lambda X, mask_nan, N_useful: _cumulant_ufunc(X, mask_nan, max_cumul, bias_correction, N_useful)
+
+    return lax_cond(
+        N_useful < 3, branch_true, branch_false,
+        X, mask_nan, N_useful
+    )
+
+
 @dataclass(kw_only=True)
 class Cumulants(ScalingFunction):
     r"""
@@ -701,7 +763,7 @@ class Cumulants(ScalingFunction):
             mrq_shapes.append(s)
 
         self.values = xr.DataArray(
-            np.zeros((*shape, *mrq_shapes)),
+            jnp.zeros((*shape, *mrq_shapes)),
             dims=(*dims, *mrq_dims),
             coords={Dim.j: self.j, Dim.m: self.m,
                     Dim.scaling_range: [scaling_range_to_str(s)
@@ -715,7 +777,7 @@ class Cumulants(ScalingFunction):
             self._compute(mrq, idx_reject, bias_correction)
 
         self._compute_fit()
-        self.log_cumulants = self.slope * np.log2(np.e)
+        self.log_cumulants = self.slope * jnp.log2(jnp.e)
 
         # self.slope.name = f'$c_m{self.variable_suffix}$'
         self.intercept.name = f'$c_m^0{self.variable_suffix}$'
@@ -770,80 +832,105 @@ class Cumulants(ScalingFunction):
 
     def _compute(self, mrq, idx_reject, bias_correction):
 
-        moments = xr.zeros_like(self.values)
+        moments = []
 
         for j in self.j:
 
-            T_X_j = np.abs(mrq.get_values(j, None))
-            dims = T_X_j.dims
-            # T_X_j = T_X_j.values
+            X = mrq.get_values(j)
 
-            np.log(T_X_j.values, out=T_X_j.values)
-
-            mask_nan = np.isnan(T_X_j)
-            mask_nan |= np.isinf(T_X_j)
-
-            if idx_reject is not None and j in idx_reject:
-                # delta = (mrq.interval_size - 1) // 2
-                mask_nan |= idx_reject[j]
-
-            T_X_j.values[mask_nan.values] = 0
-
-            N_useful = (~mask_nan).sum(dim=Dim.k_j)
-            idx_unreliable = N_useful < 3
-
-            for m in self.m:
-
-                loc_dict = {Dim.m: m, Dim.j: j}
-
-                moments.loc[loc_dict] = xr.DataArray(
-                    np.sum(fast_power(T_X_j.values, m),
-                           axis=dims.index(Dim.k_j)) / N_useful.values,
-                    dims=[d for d in dims if d != Dim.k_j],
+            if idx_reject is None or j not in idx_reject:
+                mask = xr.DataArray(
+                    jnp.zeros(X.sizes[Dim.k_j], dtype=bool),
+                    dims=Dim.k_j
                 )
+            else:
+                mask = idx_reject[j]
 
-                if m == 1:
-                    self.values.loc[loc_dict] = moments.sel(m=m, j=j)
-                else:
-                    aux = 0
+            moments.append(xr.apply_ufunc(
+                cumulant_ufunc,
+                mrq.get_values(j, None), mask, self.n_cumul,
+                self.bias_correction,
+                input_core_dims=[[Dim.k_j], [Dim.k_j], [], []],
+                output_core_dims=[[Dim.m]],
+                join='inner',
+                vectorize=False,
+                output_sizes={Dim.m: self.n_cumul}
+            ))
 
-                    for n in np.arange(1, m):
-                        aux += (special.binom(m-1, n-1)
-                                * self.values.sel(m=n, j=j)
-                                * moments.sel(m=m-n, j=j))
+        moments = xr.concat(
+            moments, dim=xr.DataArray(self.j, name='j')
+        )
 
-                    self.values.loc[loc_dict] = moments.sel(m=m, j=j) - aux
+        #     T_X_j = np.abs(mrq.get_values(j, None))
+        #     dims = T_X_j.dims
+        #     # T_X_j = T_X_j.values
 
-            if idx_unreliable.any():
-                self.values.loc[{Dim.j: j}] = self.values.sel(j=j).where(
-                    ~idx_unreliable, np.nan)
+        #     np.log(T_X_j.values, out=T_X_j.values)
 
-            if bias_correction:
+        #     mask_nan = np.isnan(T_X_j)
+        #     mask_nan |= np.isinf(T_X_j)
 
-                correction_factor = xr.ones_like(N_useful, dtype=float)
+        #     if idx_reject is not None and j in idx_reject:
+        #         # delta = (mrq.interval_size - 1) // 2
+        #         mask_nan |= idx_reject[j]
 
-                for m in self.m:
+        #     T_X_j.values[mask_nan.values] = 0
 
-                    if m == 1:
-                        continue
+        #     N_useful = (~mask_nan).sum(dim=Dim.k_j)
+        #     idx_unreliable = N_useful < 3
 
-                    correction_factor *= N_useful / (N_useful - (m-1))
+        #     for m in self.m:
 
-                    loc_dict = {Dim.m: m, Dim.j: j}
+        #         loc_dict = {Dim.m: m, Dim.j: j}
 
-                    # if m == 4:
+        #         moments.loc[loc_dict] = xr.DataArray(
+        #             np.sum(fast_power(T_X_j.values, m),
+        #                    axis=dims.index(Dim.k_j)) / N_useful.values,
+        #             dims=[d for d in dims if d != Dim.k_j],
+        #         )
 
-                    #     correction_term = (
-                    #         moments.loc[loc_dict]
-                    #         + moments.sel(m=2, j=j) ** 2 * 3)
+        #         if m == 1:
+        #             self.values.loc[loc_dict] = moments.sel(m=m, j=j)
+        #         else:
+        #             aux = 0
 
-                    #     correction_term /= N_useful
+        #             for n in np.arange(1, m):
+        #                 aux += (special.binom(m-1, n-1)
+        #                         * self.values.sel(m=n, j=j)
+        #                         * moments.sel(m=m-n, j=j))
 
-                    #     self.values.loc[loc_dict] += correction_term
+        #             self.values.loc[loc_dict] = moments.sel(m=m, j=j) - aux
 
-                    self.values.loc[loc_dict] *= correction_factor
+        #     if idx_unreliable.any():
+        #         self.values.loc[{Dim.j: j}] = self.values.sel(j=j).where(
+        #             ~idx_unreliable, np.nan)
 
-        self.values.values[np.isinf(self.values)] = np.nan
+        #     if bias_correction:
+
+        #         correction_factor = xr.ones_like(N_useful, dtype=float)
+
+        #         for m in self.m:
+
+        #             if m == 1:
+        #                 continue
+
+        #             correction_factor *= N_useful / (N_useful - (m-1))
+
+        #             loc_dict = {Dim.m: m, Dim.j: j}
+
+        #             # if m == 4:
+
+        #             #     correction_term = (
+        #             #         moments.loc[loc_dict]
+        #             #         + moments.sel(m=2, j=j) ** 2 * 3)
+
+        #             #     correction_term /= N_useful
+
+        #             #     self.values.loc[loc_dict] += correction_term
+
+        #             self.values.loc[loc_dict] *= correction_factor
+
+        # self.values.values[np.isinf(self.values)] = np.nan
 
     def __getattr__(self, name):
 
