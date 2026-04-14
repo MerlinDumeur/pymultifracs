@@ -118,7 +118,7 @@ def _compute_fit(values, weights, scaling_ranges, j, out_name):
 
 @dataclass(kw_only=True)
 class ScalingFunction(AbstractScalingFunction):
-    """"
+    """
     General DWT-based scaling function.
     """
     mrq: InitVar[multiresquantity.WaveletDec]
@@ -283,6 +283,71 @@ class ScalingFunction(AbstractScalingFunction):
 
         return self.values.sizes[Dim.bootstrap]
 
+        
+def _return_single_nan(*args):
+    return jnp.array([jnp.nan])
+
+
+# @partial(jnp.vectorize, signature='(n),(n),()->()'')
+def _stucture_gufunc(X, reject_mask, q: float | int):
+
+    mask_nan = jnp.isnan(X) | jnp.isinf(X) | reject_mask
+
+    N_useful = (~mask_nan).sum()
+    
+    return_nan = N_useful < 3
+
+    branch_true = lambda X, mask_nan, q: (jnp.nan, X, mask_nan), return_nan
+    branch_false = lambda X, mask_nan, q: _Sq_gufunc(X, mask_nan, q), return_nan
+
+    return lax_cond(
+        return_nan, branch_true, branch_false,
+        X, mask_nan, q
+    )
+
+    X, mask_nan, Sq = _structure_gufunc(X, mask_nan, q)
+
+    
+@partial(jnp.vectorize, signature='(n),(n),()->()')
+def structure_gufunc(X, reject_mask, q):
+    return _structure_gufunc(X, reject_mask, q)[0][0]
+    
+    
+@partial(jnp.vectorize, signature='(n),(n),()->(3)')
+def structure_spectrum_gufunc(X, reject_mask, q):
+    
+    (X, mask_nan, Sq), return_nan = _structure_gufunc(X, reject_mask, q)
+    
+    branch_true = lambda X, mask_nan, N_useful: jnp.nan, jnp.nan
+    branch_false = lambda X, mask_nan, N_useful: _spectrum_from_structure_gufunc(X, mask_nan, N_useful)
+    
+    return jnp.r_[
+        Sq,
+        *lax_cond(
+            return_nan, branch_true, branch_false,
+            X, mask_nan, N_useful
+        )
+    ]
+
+
+def _spectrum_from_structure_gufunc(X, mask_nan, N_useful):
+    
+    Z = jnp.sum(X, where=~mask_nan)
+    
+    R = X / Z
+    
+    V = jnp.sum(R * jnp.log2(X), where=~mask_nan)
+    U = jnp.log2(N_useful) + jnp.sum(R * jnp.log2(R), where=~mask_nan)
+    
+    return U, V
+
+    
+def _Sq_gufunc(X, mask_nan, q):
+    
+    X = jnp.abs(c_j.values) ** q
+    
+    return jnp.log2(jnp.mean(X, where=~mask_nan))
+
 
 @dataclass(kw_only=True)
 class StructureFunction(ScalingFunction):
@@ -333,9 +398,10 @@ class StructureFunction(ScalingFunction):
         bootstraping has been used.
     """
     q: np.ndarray
-    H: np.ndarray = field(init=False)
+    direct_spectrum: InitVar[bool] = False
+    spec: xr.DataArray = field(init=False)
 
-    def __post_init__(self, idx_reject, mrq, min_j):
+    def __post_init__(self, idx_reject, mrq, min_j, direct_spectrum):
 
         super().__post_init__(idx_reject, mrq, min_j)
 
@@ -366,41 +432,43 @@ class StructureFunction(ScalingFunction):
             np.zeros(shape), dims=dims, coords=coords,
             name=f"$S_q{self.variable_suffix}(j)$")
 
-        self._compute(mrq, idx_reject)
+        self._compute(mrq, idx_reject, direct_spectrum)
         self._compute_fit()
 
         self.slope.name = rf'$\zeta(q){self.variable_suffix}$'
-        # self.intercept.name = rf'$\zeta(q){self.variable_suffix}$'
-
-    def _compute(self, mrq, idx_reject):
-
+        
+    def _compute(self, mrq, idx_reject, compute_spectrum=False):
+        """
+        Computes the values of the Structure functions for all (q, j),
+        and optionally the scaling functions used in direct determination
+        of the multifractal spectrum.
+        """
+        
+        S = []
+        
+        if compute_spectrum:
+            fun = structure_spectrum_gufunc
+        else:
+            fun = structure_gufuc
+        
         for j in self.j:
-
-            c_j = mrq.get_values(j, idx_reject)
-
-            # c_j = _expand_align(c_j, reference_order=self.dims[1:])
-
-            for q in self.q:
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        'ignore', "Mean of empty slice",
-                        category=RuntimeWarning)
-
-                    self.values.loc[{Dim.q: q, Dim.j: j}] = xr.DataArray(
-                        np.log2(np.nanmean(fast_power(np.abs(c_j.values), q),
-                                           axis=c_j.dims.index(Dim.k_j))),
-                        dims=[d for d in c_j.dims if d != Dim.k_j])
-
-            mask_nan = np.isnan(c_j) | np.isinf(c_j)
-            N_useful = (~mask_nan).sum(dim=Dim.k_j)
-            idx_unreliable = N_useful < 3
-
-            if idx_unreliable.any():
-                self.values.loc[{Dim.j: j}] = self.values.sel(j=j).where(
-                    ~idx_unreliable, np.nan)
-
-        self.values.values[np.isinf(self.values)] = np.nan
+            
+            S.append(xr.apply_ufunc(
+                fun, mrq.get_values(j, None), idx_reject, self.q,
+                self.bias_correction,
+                input_core_dims=[[Dim.k_j], [Dim.k_j], []],
+                output_core_dims=[['coef']],
+                join='inner',
+                vectorize=False,
+                output_sizes={'coef': 3 if compute_spectrum else 1})
+            )
+            
+        S = xr.concat(S, dim=xr.DataArray(self.j, name='j'))
+        
+        self.values = S.isel(coef=0)
+        
+        if compute_spectrum:
+            return S.isel(coef=jnp.s_[1:2])
 
     def _get_H(self):
         return self.slope.sel(q=2) / 2
@@ -1085,11 +1153,12 @@ class MFSpectrum(ScalingFunction):
             mrq_shapes.append(s)
 
         self.U = xr.DataArray(
-            np.zeros((*shape, *mrq_shapes)), dims=(*dims, *mrq_dims),
+            jnp.zeros((*shape, *mrq_shapes)), dims=(*dims, *mrq_dims),
             coords={Dim.j: self.j, Dim.q: self.q,
                     Dim.scaling_range: [scaling_range_to_str(s)
                                         for s in self.scaling_ranges]},
             name=f'$U{self.variable_suffix}(j, q)$')
+
         self.V = xr.zeros_like(self.U)
         self.V.name = f'$V{self.variable_suffix}(j, q)$'
 
@@ -1112,15 +1181,13 @@ class MFSpectrum(ScalingFunction):
 
         # 1. Compute U(j,q) and V(j, q)
 
-        # shape (n_q, n_scales, n_rep)
-
         for j in self.j:
 
             # nj = mrq.nj[j]
             mrq_values_j = mrq.get_values(j, idx_reject)
             dims = mrq_values_j.dims
             # coords = mrq_values_j.coords
-            mrq_values_j = np.abs(mrq_values_j.values)
+            mrq_values_j = jnp.abs(mrq_values_j.values)
 
             # if 'scaling_range' not in dim_names:
             #     dim_names.insert(1, 'scaling_range')
@@ -1130,7 +1197,7 @@ class MFSpectrum(ScalingFunction):
             #     mrq_values_j, idx_reject, j, mrq.interval_size)
 
             # idx_nan = np.isnan(mrq_values_j)
-            mask_nan = np.isnan(mrq_values_j) | np.isinf(mrq_values_j)
+            mask_nan = jnp.isnan(mrq_values_j) | jnp.isinf(mrq_values_j)
             temp = np.stack(
                 [fast_power(mrq_values_j, q) for q in self.q], axis=0)
             # np.nan ** 0 = 1.0, adressed here

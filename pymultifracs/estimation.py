@@ -90,7 +90,7 @@ def estimate_eta_p(wt_coefs, p_exp, scaling_ranges, weighted, idx_reject):
         weighted=weighted, idx_reject=idx_reject,
         bootstrapped_obj=bootstrapped_obj)
 
-    # shape N_ranges, n_channelnals
+    # shape N_ranges, n_channel
     return wavelet_structure.zeta.isel(q=0)
 
 

@@ -620,8 +620,8 @@ class WaveletDec(MultiResolutionQuantityBase):
             case _:
                 return super().__getattribute__(name)
 
-
-@jit(static_argnames=['min_level', 'max_level'])
+                
+# @jit(static_argnames=['min_level', 'max_level'])
 def _correct_pleaders(eta_p, p_exp, min_level, max_level):
     """
     Return p-leader correction factor for finite resolution
