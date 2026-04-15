@@ -260,7 +260,7 @@ class ScalingFunction(AbstractScalingFunction):
 
         output = xr.apply_ufunc(
             linear_regression_ufunc,
-            y.coords[Dim.j].values.astype(float), y, self.weights,
+            y.coords[Dim.j].astype(float), y, self.weights,
             input_core_dims=[[Dim.j], [Dim.j], [Dim.j]],
             output_core_dims=[['coef']],
             join='inner',
@@ -289,7 +289,7 @@ def _return_single_nan(*args):
 
 
 # @partial(jnp.vectorize, signature='(n),(n),()->()'')
-def _stucture_gufunc(X, reject_mask, q: float | int):
+def _structure_gufunc(X, reject_mask, q: float | int):
 
     mask_nan = jnp.isnan(X) | jnp.isinf(X) | reject_mask
 
@@ -297,20 +297,20 @@ def _stucture_gufunc(X, reject_mask, q: float | int):
     
     return_nan = N_useful < 3
 
-    branch_true = lambda X, mask_nan, q: (jnp.nan, X, mask_nan), return_nan
-    branch_false = lambda X, mask_nan, q: _Sq_gufunc(X, mask_nan, q), return_nan
+    branch_true = lambda X, mask_nan, q: ((jnp.nan, X, mask_nan), return_nan)
+    branch_false = lambda X, mask_nan, q: ((_Sq_gufunc(X, mask_nan, q), X, mask_nan), return_nan)
 
     return lax_cond(
         return_nan, branch_true, branch_false,
         X, mask_nan, q
     )
 
-    X, mask_nan, Sq = _structure_gufunc(X, mask_nan, q)
+    # X, mask_nan, Sq = _structure_gufunc(X, mask_nan, q)
 
     
-@partial(jnp.vectorize, signature='(n),(n),()->()')
+@partial(jnp.vectorize, signature='(n),(n),()->(1)')
 def structure_gufunc(X, reject_mask, q):
-    return _structure_gufunc(X, reject_mask, q)[0][0]
+    return jnp.r_[_structure_gufunc(X, reject_mask, q)[0][0]]
     
     
 @partial(jnp.vectorize, signature='(n),(n),()->(3)')
@@ -344,8 +344,8 @@ def _spectrum_from_structure_gufunc(X, mask_nan, N_useful):
     
 def _Sq_gufunc(X, mask_nan, q):
     
-    X = jnp.abs(c_j.values) ** q
-    
+    X = jnp.abs(X) ** q
+
     return jnp.log2(jnp.mean(X, where=~mask_nan))
 
 
@@ -408,6 +408,8 @@ class StructureFunction(ScalingFunction):
         if self.bootstrapped_obj is not None:
             self.bootstrapped_obj = self.bootstrapped_obj.structure
 
+        self.q = xr.DataArray(self.q, coords={Dim.q: self.q})
+
         dims = (Dim.q, Dim.j, Dim.scaling_range)
         shape = (len(self.q), len(self.j), len(self.scaling_ranges))
 
@@ -449,13 +451,22 @@ class StructureFunction(ScalingFunction):
         if compute_spectrum:
             fun = structure_spectrum_gufunc
         else:
-            fun = structure_gufuc
+            fun = structure_gufunc
         
         for j in self.j:
             
+            X = mrq.get_values(j, None)
+
+            if idx_reject is None or j not in idx_reject:
+                mask = xr.DataArray(
+                    jnp.zeros(X.sizes[Dim.k_j], dtype=bool),
+                    dims=Dim.k_j
+                )
+            else:
+                mask = idx_reject[j]
+                
             S.append(xr.apply_ufunc(
-                fun, mrq.get_values(j, None), idx_reject, self.q,
-                self.bias_correction,
+                fun, X, mask, self.q,
                 input_core_dims=[[Dim.k_j], [Dim.k_j], []],
                 output_core_dims=[['coef']],
                 join='inner',
@@ -463,7 +474,7 @@ class StructureFunction(ScalingFunction):
                 output_sizes={'coef': 3 if compute_spectrum else 1})
             )
             
-        S = xr.concat(S, dim=xr.DataArray(self.j, name='j'))
+        S = xr.concat(S, dim=Dim.j)
         
         self.values = S.isel(coef=0)
         
@@ -900,7 +911,7 @@ class Cumulants(ScalingFunction):
 
     def _compute(self, mrq, idx_reject, bias_correction):
 
-        moments = []
+        cumulants = []
 
         for j in self.j:
 
@@ -914,7 +925,7 @@ class Cumulants(ScalingFunction):
             else:
                 mask = idx_reject[j]
 
-            moments.append(xr.apply_ufunc(
+            cumulants.append(xr.apply_ufunc(
                 cumulant_ufunc,
                 mrq.get_values(j, None), mask, self.n_cumul,
                 self.bias_correction,
@@ -925,9 +936,7 @@ class Cumulants(ScalingFunction):
                 output_sizes={Dim.m: self.n_cumul}
             ))
 
-        moments = xr.concat(
-            moments, dim=xr.DataArray(self.j, name='j')
-        )
+        self.values = xr.concat(cumulants, dim=Dim.j)
 
         #     T_X_j = np.abs(mrq.get_values(j, None))
         #     dims = T_X_j.dims
