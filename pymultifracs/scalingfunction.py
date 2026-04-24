@@ -114,7 +114,54 @@ def _get_bootstrap_weights(sf, j_min, j_max, value_name=None):
 
 def _compute_fit(values, weights, scaling_ranges, j, out_name):
     pass
+    
 
+
+def _compute_scalingfunctions(mrq, min_j, q, estimates):
+    
+    j_array = np.array([j for j in mrq.values if j >= min_j]))
+    
+    coords = {
+        Dim.j: (Dim.j, j_array),
+        'gamint': ('gamimt', np.array([mrq.gamint])),
+    }
+    
+    attrs = {
+        'formalism': mrq.formalism,
+        'weighted': mrq.weighted,
+        'bootstrapped_obj': mrq.bootstrapped_obj
+    }
+    
+    scaling_functions = {}
+    
+    estimate_strucutre = 's' in estimate
+    estimate_spectrum = 'm' in estimate
+    
+    if 'c' in estimate:
+        scaling_functions['cumulants'] = compute_cumulants(
+            j_array, mrq, idx_reject, max_cumul, bias_correction
+        )
+    
+    if 's' in estimate:
+        
+        if 'm' in estimate:
+            
+            
+            
+     
+    ds = xr.Dataset(scaling_functions, coords, attrs)
+    
+    
+#     
+# 
+# @xr.register_dataset_accessor('scaling_function')
+# class ScalingFunctionXR:
+#     """
+#     Provides the necessary methods to represent scaling functions in
+#     xarray.Dataset form.
+#     """
+#     
+#     
 
 @dataclass(kw_only=True)
 class ScalingFunction(AbstractScalingFunction):
@@ -287,15 +334,25 @@ class ScalingFunction(AbstractScalingFunction):
 def _return_single_nan(*args):
     return jnp.array([jnp.nan])
 
-
-# @partial(jnp.vectorize, signature='(n),(n),()->()'')
-def _structure_gufunc(X, reject_mask, q: float | int):
-
+    
+def _prepare_mask(X, reject_mask):
+    
     mask_nan = jnp.isnan(X) | jnp.isinf(X) | reject_mask
 
     N_useful = (~mask_nan).sum()
     
     return_nan = N_useful < 3
+    
+    return mask_nan, N_useful, return_nan
+    
+def _get_mrq_q(X):
+    return jnp.abs(X) ** q
+    
+    
+# @partial(jnp.vectorize, signature='(n),(n),()->()'')
+def _structure_gufunc(X, reject_mask, q: float | int):
+
+    mask_nan, N_useful, return_nan = _prepare_mask(X, reject_mask)
 
     branch_true = lambda X, mask_nan, q: ((jnp.nan, X, mask_nan), return_nan)
     branch_false = lambda X, mask_nan, q: ((_Sq_gufunc(X, mask_nan, q), X, mask_nan), return_nan)
@@ -311,6 +368,19 @@ def _structure_gufunc(X, reject_mask, q: float | int):
 @partial(jnp.vectorize, signature='(n),(n),()->(1)')
 def structure_gufunc(X, reject_mask, q):
     return jnp.r_[_structure_gufunc(X, reject_mask, q)[0][0]]
+    
+
+@partial(jnp.vectorize, signature='(n),(n),()->(2)')
+def spectrum_gufunc(X, reject_mask, q):
+    
+    mask_nan, N_useful, return_nan = _prepare_mask(X, reject_mask)
+    
+    branch_true = lambda X, mask_nan, N_useful: jnp.array([jnp.nan, jnp.nan])
+    branch_false = lambda X, mask_nan, N_useful: 
+
+    return lax_cond(
+        return_nan, branch_true, branch_false,
+        X, mask_nan, N_useful)
     
     
 @partial(jnp.vectorize, signature='(n),(n),()->(3)')
@@ -344,7 +414,7 @@ def _spectrum_from_structure_gufunc(X, mask_nan, N_useful):
     
 def _Sq_gufunc(X, mask_nan, q):
     
-    X = jnp.abs(X) ** q
+    X = _get_mrq_q(X)
 
     return jnp.log2(jnp.mean(X, where=~mask_nan))
 
@@ -754,6 +824,34 @@ def cumulant_ufunc(X, reject_mask, max_cumul: int, bias_correction: bool):
         X, mask_nan, N_useful
     )
 
+    
+def compute_cumulants(j_array, mrq, idx_reject, max_cumul, bias_correction,
+        ):
+    
+    cumulants = []
+
+    for j in j_array:
+
+        if idx_reject is None or j not in idx_reject:
+            mask = xr.DataArray(
+                jnp.zeros(X.sizes[Dim.k_j], dtype=bool),
+                dims=Dim.k_j)
+        else:
+            mask = idx_reject[j]
+
+        cumulants.append(xr.apply_ufunc(
+            cumulant_ufunc,
+            mrq.get_values(j, None), mask, max_cumul,
+            bias_correction,
+            input_core_dims=[[Dim.k_j], [Dim.k_j], [], []],
+            output_core_dims=[[Dim.m]],
+            join='inner',
+            vectorize=False,
+            output_sizes={Dim.m: max_cumul}
+        ))
+
+    return xr.concat(cumulants, dim=Dim.j)
+
 
 @dataclass(kw_only=True)
 class Cumulants(ScalingFunction):
@@ -914,8 +1012,6 @@ class Cumulants(ScalingFunction):
         cumulants = []
 
         for j in self.j:
-
-            X = mrq.get_values(j)
 
             if idx_reject is None or j not in idx_reject:
                 mask = xr.DataArray(
