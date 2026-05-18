@@ -116,10 +116,9 @@ def _compute_fit(values, weights, scaling_ranges, j, out_name):
     pass
     
 
-
 def _compute_scalingfunctions(mrq, min_j, q, estimates):
     
-    j_array = np.array([j for j in mrq.values if j >= min_j]))
+    j_array = np.array([j for j in mrq.values if j >= min_j])
     
     coords = {
         Dim.j: (Dim.j, j_array),
@@ -143,9 +142,8 @@ def _compute_scalingfunctions(mrq, min_j, q, estimates):
         )
     
     if 's' in estimate:
-        
         if 'm' in estimate:
-            
+            structure_spectrum_gufunc()
             
             
      
@@ -418,6 +416,47 @@ def _Sq_gufunc(X, mask_nan, q):
 
     return jnp.log2(jnp.mean(X, where=~mask_nan))
 
+    
+def compute_structure(j_array, mrq, idx_reject, q, direct_spectrum=False):
+    
+    outputs = []
+    
+    compute_gufunc = (
+        structure_spectrum_gufunc if direct_spectrum else structure_gufunc)
+    output_dim_size = 3 if direct_spectrum else 1
+
+    for j in j_array:
+        
+        if idx_reject is None or j not in idx_reject:
+            mask = xr.DataArray(
+                jnp.zeros(X.sizes_[Dim.k_j], dtype=bool),
+                dims=Dim.k_j
+            )
+        else:
+            mask = idx_reject[j]
+            
+        outputs.append(
+            xr.apply_ufunc(
+                compute_gufunc,
+                mrq.get_values(j, None), mask, q,
+                input_core_dims=[[Dim.k_j], [Dim.k_j], []],
+                output_core_dims=[['output']],
+                join='inner',
+                vectorize=False,
+                output_sizes={'output': output_dim_size}
+            )
+        )
+        
+    output = xr.concat(outputs, dim=Dim.j)
+        
+    if direct_spectrum:
+        spectrum = output.isel()
+        
+    return xr.concat
+
+
+def compute_direct_spectrum(j_arrau, mrq, idx_reject, q)        
+            
 
 @dataclass(kw_only=True)
 class StructureFunction(ScalingFunction):
