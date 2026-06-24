@@ -114,52 +114,66 @@ def _get_bootstrap_weights(sf, j_min, j_max, value_name=None):
 
 def _compute_fit(values, weights, scaling_ranges, j, out_name):
     pass
-    
+
+
+data_array_names = {
+    'regularity': '$h{reg_suffix}(q)$',
+    'dimension': r'$\mathcal{{L}}{var_suffix}(q)$',
+    'structure': 'S_j{var_suffix}(q)',
+    'cumulants': '$C_m{mrq.get_suffix()[0]}(j)$'
+}
+
 
 def _compute_scalingfunctions(mrq, min_j, q, estimates):
-    
+
     j_array = np.array([j for j in mrq.values if j >= min_j])
-    
+
     coords = {
         Dim.j: (Dim.j, j_array),
         'gamint': ('gamimt', np.array([mrq.gamint])),
     }
-    
+
     attrs = {
         'formalism': mrq.formalism,
         'weighted': mrq.weighted,
         'bootstrapped_obj': mrq.bootstrapped_obj
     }
-    
+
     scaling_functions = {}
-    
-    estimate_strucutre = 's' in estimate
-    estimate_spectrum = 'm' in estimate
-    
-    if 'c' in estimate:
+
+    var_suffix, reg_suffix = mrq.get_suffix()
+
+    if 'c' in estimates:
         scaling_functions['cumulants'] = compute_cumulants(
             j_array, mrq, idx_reject, max_cumul, bias_correction
         )
-    
-    if 's' in estimate:
-        if 'm' in estimate:
-            structure_spectrum_gufunc()
-            
-            
-     
-    ds = xr.Dataset(scaling_functions, coords, attrs)
-    
-    
-#     
-# 
+
+    if 's' in estimates:
+        scaling_functions['structure'], spectrum = compute_structure(
+            j_array, mrq, idx_reject, q, 'm' in estimate,
+        )
+        if spectrum is not None:
+            scaling_functions.update(spectrum)
+    elif 'm' in estimates:
+        scaling_functions.update(compute_direct_spectrum(
+            j_array, mrq, idx_reject, q))
+
+    # name the data arrays
+    for key, array in scaling_functions.items():
+
+        array.name = data_array_names[key].format(
+            var_suffix=var_suffix, reg_suffix=reg_suffix)
+
+    return xr.Dataset(scaling_functions, coords, attrs)
+
+
 # @xr.register_dataset_accessor('scaling_function')
 # class ScalingFunctionXR:
 #     """
 #     Provides the necessary methods to represent scaling functions in
 #     xarray.Dataset form.
 #     """
-#     
-#     
+
 
 @dataclass(kw_only=True)
 class ScalingFunction(AbstractScalingFunction):
@@ -328,25 +342,26 @@ class ScalingFunction(AbstractScalingFunction):
 
         return self.values.sizes[Dim.bootstrap]
 
-        
+
 def _return_single_nan(*args):
     return jnp.array([jnp.nan])
 
-    
+
 def _prepare_mask(X, reject_mask):
-    
+
     mask_nan = jnp.isnan(X) | jnp.isinf(X) | reject_mask
 
     N_useful = (~mask_nan).sum()
-    
+
     return_nan = N_useful < 3
-    
+
     return mask_nan, N_useful, return_nan
-    
-def _get_mrq_q(X):
+
+
+def _get_mrq_q(X, q):
     return jnp.abs(X) ** q
-    
-    
+
+
 # @partial(jnp.vectorize, signature='(n),(n),()->()'')
 def _structure_gufunc(X, reject_mask, q: float | int):
 
@@ -362,33 +377,35 @@ def _structure_gufunc(X, reject_mask, q: float | int):
 
     # X, mask_nan, Sq = _structure_gufunc(X, mask_nan, q)
 
-    
+
 @partial(jnp.vectorize, signature='(n),(n),()->(1)')
 def structure_gufunc(X, reject_mask, q):
     return jnp.r_[_structure_gufunc(X, reject_mask, q)[0][0]]
-    
+
 
 @partial(jnp.vectorize, signature='(n),(n),()->(2)')
 def spectrum_gufunc(X, reject_mask, q):
-    
+
     mask_nan, N_useful, return_nan = _prepare_mask(X, reject_mask)
-    
+
     branch_true = lambda X, mask_nan, N_useful: jnp.array([jnp.nan, jnp.nan])
-    branch_false = lambda X, mask_nan, N_useful: 
+    branch_false = lambda X, mask_nan, N_useful: spectrum_gufunc(
+        X, reject_
+    )
 
     return lax_cond(
         return_nan, branch_true, branch_false,
         X, mask_nan, N_useful)
-    
-    
+
+
 @partial(jnp.vectorize, signature='(n),(n),()->(3)')
 def structure_spectrum_gufunc(X, reject_mask, q):
-    
+
     (X, mask_nan, Sq), return_nan = _structure_gufunc(X, reject_mask, q)
-    
+
     branch_true = lambda X, mask_nan, N_useful: jnp.nan, jnp.nan
     branch_false = lambda X, mask_nan, N_useful: _spectrum_from_structure_gufunc(X, mask_nan, N_useful)
-    
+
     return jnp.r_[
         Sq,
         *lax_cond(
@@ -399,34 +416,34 @@ def structure_spectrum_gufunc(X, reject_mask, q):
 
 
 def _spectrum_from_structure_gufunc(X, mask_nan, N_useful):
-    
+
     Z = jnp.sum(X, where=~mask_nan)
-    
+
     R = X / Z
-    
+
     V = jnp.sum(R * jnp.log2(X), where=~mask_nan)
     U = jnp.log2(N_useful) + jnp.sum(R * jnp.log2(R), where=~mask_nan)
-    
+
     return U, V
 
-    
+
 def _Sq_gufunc(X, mask_nan, q):
-    
-    X = _get_mrq_q(X)
 
-    return jnp.log2(jnp.mean(X, where=~mask_nan))
+    X = _get_mrq_q(X, q)
 
-    
+    return jnp.log2(jnp.mean(X, where=~mask_nan)), X
+
+
 def compute_structure(j_array, mrq, idx_reject, q, direct_spectrum=False):
-    
+
     outputs = []
-    
+
     compute_gufunc = (
         structure_spectrum_gufunc if direct_spectrum else structure_gufunc)
     output_dim_size = 3 if direct_spectrum else 1
 
     for j in j_array:
-        
+
         if idx_reject is None or j not in idx_reject:
             mask = xr.DataArray(
                 jnp.zeros(X.sizes_[Dim.k_j], dtype=bool),
@@ -434,7 +451,7 @@ def compute_structure(j_array, mrq, idx_reject, q, direct_spectrum=False):
             )
         else:
             mask = idx_reject[j]
-            
+
         outputs.append(
             xr.apply_ufunc(
                 compute_gufunc,
@@ -443,20 +460,50 @@ def compute_structure(j_array, mrq, idx_reject, q, direct_spectrum=False):
                 output_core_dims=[['output']],
                 join='inner',
                 vectorize=False,
-                output_sizes={'output': output_dim_size}
+                output_sizes={'output': output_dim_size},
             )
         )
-        
+
     output = xr.concat(outputs, dim=Dim.j)
-        
+
+    structure = output.isel(output=0)
+
+    spectrum = None
+
     if direct_spectrum:
-        spectrum = output.isel()
-        
-    return xr.concat
+        regularity = output.isel(output=1)
+        dimension = output.isel(output=2)
+
+        spectrum = {'regularity': regularity, 'dimension': dimension}
+
+    return structure, None
 
 
-def compute_direct_spectrum(j_arrau, mrq, idx_reject, q)        
-            
+def compute_direct_spectrum(j_array, mrq, idx_reject, q):
+
+    outputs = []
+
+    for j in j_array:
+
+        outputs.append(
+            xr.apply_ufunc(
+                compute_gufunc,
+                mrq.get_values(j, None), mask, q,
+                input_core_dims=[[Dim.k_j], [Dim.k_j], []],
+                output_core_dims=[['output']],
+                join='inner',
+                vectorize=False,
+                output_sizes={'output': 2},
+            )
+        )
+
+    output = xr.concat(outputs, dim=Dim.j)
+
+    return {
+        'regularity': output.isel(output=0),
+        'dimension': output.isel(output=1),
+    }
+
 
 @dataclass(kw_only=True)
 class StructureFunction(ScalingFunction):
@@ -547,23 +594,23 @@ class StructureFunction(ScalingFunction):
         self._compute_fit()
 
         self.slope.name = rf'$\zeta(q){self.variable_suffix}$'
-        
+
     def _compute(self, mrq, idx_reject, compute_spectrum=False):
         """
         Computes the values of the Structure functions for all (q, j),
         and optionally the scaling functions used in direct determination
         of the multifractal spectrum.
         """
-        
+
         S = []
-        
+
         if compute_spectrum:
             fun = structure_spectrum_gufunc
         else:
             fun = structure_gufunc
-        
+
         for j in self.j:
-            
+
             X = mrq.get_values(j, None)
 
             if idx_reject is None or j not in idx_reject:
@@ -573,7 +620,7 @@ class StructureFunction(ScalingFunction):
                 )
             else:
                 mask = idx_reject[j]
-                
+
             S.append(xr.apply_ufunc(
                 fun, X, mask, self.q,
                 input_core_dims=[[Dim.k_j], [Dim.k_j], []],
@@ -582,11 +629,11 @@ class StructureFunction(ScalingFunction):
                 vectorize=False,
                 output_sizes={'coef': 3 if compute_spectrum else 1})
             )
-            
+
         S = xr.concat(S, dim=Dim.j)
-        
+
         self.values = S.isel(coef=0)
-        
+
         if compute_spectrum:
             return S.isel(coef=jnp.s_[1:2])
 
@@ -800,7 +847,7 @@ class StructureFunction(ScalingFunction):
 
 
 def _cumulant_bias_correction(C, max_cumul: int, N_useful: int):
-    
+
     correction_factor = 1
 
     for m in range(2, max_cumul + 1):
@@ -821,7 +868,7 @@ def _cumulant_ufunc(X, mask_nan, max_cumul: int, bias_correction: bool, N_useful
     C.append(Mu[0])
 
     for i, m in enumerate(range(2, max_cumul + 1)):
- 
+
         aux = jnp.zeros_like(C[0])
 
         for n in np.arange(1, m):
@@ -836,7 +883,7 @@ def _cumulant_ufunc(X, mask_nan, max_cumul: int, bias_correction: bool, N_useful
         bias_correction,
         branch_true,
         branch_false,
-        C, N_useful 
+        C, N_useful
     )]
 
 
@@ -863,10 +910,10 @@ def cumulant_ufunc(X, reject_mask, max_cumul: int, bias_correction: bool):
         X, mask_nan, N_useful
     )
 
-    
+
 def compute_cumulants(j_array, mrq, idx_reject, max_cumul, bias_correction,
         ):
-    
+
     cumulants = []
 
     for j in j_array:
@@ -889,7 +936,9 @@ def compute_cumulants(j_array, mrq, idx_reject, max_cumul, bias_correction,
             output_sizes={Dim.m: max_cumul}
         ))
 
-    return xr.concat(cumulants, dim=Dim.j)
+    out = xr.concat(cumulants, dim=Dim.j)
+
+    return out
 
 
 @dataclass(kw_only=True)
